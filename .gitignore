@@ -1,0 +1,27 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local virtualenvs and build artifacts
+.venv/
+.venv-*/
+build/
+dist/
+*.egg-info/
+
+# Generated reports and smoke-test artifacts
+output/
+reports/
+*.pdf
+*.docx
+*.html
+
+# Local credentials/config
+.env
+config.json
+config.yaml
+config.yml
+

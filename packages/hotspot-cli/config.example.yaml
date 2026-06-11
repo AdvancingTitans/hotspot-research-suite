@@ -1,0 +1,8 @@
+lark:
+  chat_id: "oc_xxxxxxxxxxxxxxxxx"
+  identity: "bot"
+  message_template: |-
+    选题：{topic}
+    简介：{summary}
+    本地报告：{report_path}
+  upload_folder_token: ""
