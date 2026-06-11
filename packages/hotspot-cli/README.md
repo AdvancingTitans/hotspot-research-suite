@@ -42,12 +42,18 @@ hotspot-cli/
 
 ## 安装
 
-建议使用 Python 3.10+。
+支持 Python 3.9+。macOS 系统自带 `pip3` 若绑定 Python 3.9，也可以直接安装 0.1.1 或更新版本。
 
 PyPI 发布后可直接安装：
 
 ```bash
 pip install hotspot-research-cli
+```
+
+如果曾经因为 0.1.0 的 Python 版本限制安装失败，重新执行：
+
+```bash
+pip3 install --upgrade hotspot-research-cli
 ```
 
 本地开发安装：

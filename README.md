@@ -10,7 +10,7 @@ This repository contains:
 
 ## Quick Start
 
-Install the CLI from PyPI after release:
+Install the CLI from PyPI. Python 3.9+ is supported:
 
 ```bash
 pip install hotspot-research-cli

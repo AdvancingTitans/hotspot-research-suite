@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 DEFAULT_TEMPLATE = "选题：{topic}\n简介：{summary}\n本地报告：{report_path}"
@@ -27,7 +27,7 @@ class ConfigError(RuntimeError):
 
 
 class ConfigManager:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Optional[Path] = None) -> None:
         self.path = path or Path.home() / ".hotspot-research-cli" / "config.json"
 
     def load(self) -> AppConfig:
@@ -60,10 +60,10 @@ class ConfigManager:
     def update_lark(
         self,
         *,
-        chat_id: str | None = None,
-        identity: str | None = None,
-        message_template: str | None = None,
-        upload_folder_token: str | None = None,
+        chat_id: Optional[str] = None,
+        identity: Optional[str] = None,
+        message_template: Optional[str] = None,
+        upload_folder_token: Optional[str] = None,
     ) -> AppConfig:
         config = self.load()
         if chat_id is not None:

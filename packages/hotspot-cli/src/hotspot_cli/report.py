@@ -6,6 +6,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from .hotspots import HotspotCandidate
 
@@ -18,7 +19,7 @@ class ReportResult:
     topic: str
     markdown_path: Path
     html_path: Path
-    pdf_path: Path | None
+    pdf_path: Optional[Path]
     summary: str
 
 
@@ -27,7 +28,7 @@ class ReportError(RuntimeError):
 
 
 class ReportGenerator:
-    def __init__(self, output_dir: Path | None = None, skill_dir: Path = DEFAULT_SKILL_DIR) -> None:
+    def __init__(self, output_dir: Optional[Path] = None, skill_dir: Path = DEFAULT_SKILL_DIR) -> None:
         self.output_dir = (output_dir or Path.cwd() / "reports").resolve()
         self.skill_dir = skill_dir
 
@@ -58,7 +59,7 @@ class ReportGenerator:
             return
         html_path.write_text("<pre>" + md_path.read_text(encoding="utf-8") + "</pre>", encoding="utf-8")
 
-    def _render_pdf(self, html_path: Path, pdf_path: Path) -> Path | None:
+    def _render_pdf(self, html_path: Path, pdf_path: Path) -> Optional[Path]:
         script = self.skill_dir / "scripts" / "render_pdf_weasy.py"
         if script.exists():
             argv = ["python3", str(script), str(html_path), str(pdf_path)]

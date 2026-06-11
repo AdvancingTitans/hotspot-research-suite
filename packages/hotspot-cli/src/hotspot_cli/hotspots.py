@@ -7,7 +7,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Optional
 
 
 PACKAGE_LAST30_MODULE = "hotspot_cli.last30days_safe"
@@ -160,9 +160,9 @@ class HotspotFilter:
 class HotspotService:
     def __init__(
         self,
-        collector: Callable[[str, int], list[HotspotCandidate]] | None = None,
-        client: Last30DaysClient | None = None,
-        hotspot_filter: HotspotFilter | None = None,
+        collector: Optional[Callable[[str, int], list[HotspotCandidate]]] = None,
+        client: Optional[Last30DaysClient] = None,
+        hotspot_filter: Optional[HotspotFilter] = None,
     ) -> None:
         self.client = client or Last30DaysClient()
         self.hotspot_filter = hotspot_filter or HotspotFilter()

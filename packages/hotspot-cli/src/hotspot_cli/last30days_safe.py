@@ -18,7 +18,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 USER_AGENT = "Hermes-last30days-safe/1.0 (+public research; no auth)"
 DEFAULT_SOURCES = ("hn", "github", "reddit", "polymarket")
@@ -29,10 +29,10 @@ class Item:
     source: str
     title: str
     url: str
-    published: str | None = None
+    published: Optional[str] = None
     score: float = 0.0
-    snippet: str | None = None
-    meta: dict[str, Any] | None = None
+    snippet: Optional[str] = None
+    meta: Optional[dict[str, Any]] = None
 
 
 def utc_now() -> dt.datetime:
@@ -43,7 +43,7 @@ def cutoff_iso(days: int) -> str:
     return (utc_now() - dt.timedelta(days=days)).isoformat().replace("+00:00", "Z")
 
 
-def parse_time(value: Any) -> dt.datetime | None:
+def parse_time(value: Any) -> Optional[dt.datetime]:
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -295,7 +295,7 @@ def parse_sources(value: str) -> list[str]:
     return parts or list(DEFAULT_SOURCES)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Safe public-source last-30-days research helper")
     ap.add_argument("topic", nargs="?", help="topic to research")
     ap.add_argument("--sources", default=",".join(DEFAULT_SOURCES), help="comma-separated sources: hn,github,reddit,polymarket")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import typer
 from rich.console import Console
@@ -33,7 +33,7 @@ def _print_candidates(title: str, items: list[HotspotCandidate]) -> None:
     console.print(table)
 
 
-def _choose_from_list(items: list[HotspotCandidate], *, refresh_word: str = "refresh") -> int | str:
+def _choose_from_list(items: list[HotspotCandidate], *, refresh_word: str = "refresh") -> Union[int, str]:
     while True:
         raw = typer.prompt(f"输入序号确认，或输入 {refresh_word} 换一批").strip()
         if raw.lower() == refresh_word:

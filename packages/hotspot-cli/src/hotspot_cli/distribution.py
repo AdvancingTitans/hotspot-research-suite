@@ -13,7 +13,7 @@ class DistributionError(RuntimeError):
 Runner = Callable[[list[str], Optional[Path]], str]
 
 
-def subprocess_runner(argv: list[str], cwd: Path | None = None) -> str:
+def subprocess_runner(argv: list[str], cwd: Optional[Path] = None) -> str:
     proc = subprocess.run(argv, cwd=str(cwd) if cwd else None, capture_output=True, text=True)
     if proc.returncode != 0:
         raise DistributionError(proc.stderr.strip() or proc.stdout.strip() or f"命令执行失败：{' '.join(argv)}")

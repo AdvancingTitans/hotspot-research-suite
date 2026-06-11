@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.1] - 2026-06-12
+
+- Add Python 3.9 compatibility for macOS system `pip3`.
+- Replace Python 3.10-only union type syntax in runtime modules.
+
 ## [0.1.0] - 2026-06-11
 
 - Initial PyPI-ready release.
