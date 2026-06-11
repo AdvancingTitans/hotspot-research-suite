@@ -1,16 +1,16 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-TOKEN_FILE="${GITHUB_TOKEN_FILE:-$HOME/.config/hotspot-research-suite/github_token}"
+TOKEN_FILE="${GITHUB_TOKEN_FILE:-$HOME/.config/github/token}"
 
 if [[ ! -f "$TOKEN_FILE" ]]; then
   cat >&2 <<EOF
 GitHub token file not found: $TOKEN_FILE
 
 Create it with:
-  mkdir -p ~/.config/hotspot-research-suite
-  cp /tmp/.gh_token ~/.config/hotspot-research-suite/github_token
-  chmod 600 ~/.config/hotspot-research-suite/github_token
+  mkdir -p ~/.config/github
+  cp /tmp/.gh_token ~/.config/github/token
+  chmod 600 ~/.config/github/token
 EOF
   exit 1
 fi
