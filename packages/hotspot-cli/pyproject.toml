@@ -8,11 +8,34 @@ version = "0.1.0"
 description = "Interactive CLI for last30days-safe guided hotspot research reports"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "AdvancingTitans" },
+]
+keywords = ["research", "cli", "hotspot", "lark", "feishu", "agent"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business",
+  "Topic :: Text Processing",
+]
 dependencies = [
   "typer>=0.12",
   "rich>=13.7",
   "PyYAML>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/AdvancingTitans/hotspot-research-suite"
+Repository = "https://github.com/AdvancingTitans/hotspot-research-suite"
+Issues = "https://github.com/AdvancingTitans/hotspot-research-suite/issues"
 
 [project.scripts]
 hotspot-research = "hotspot_cli.cli:main"

@@ -24,4 +24,6 @@ reports/
 config.json
 config.yaml
 config.yml
-
+github_token
+*.token
+.github_token

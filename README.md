@@ -10,7 +10,13 @@ This repository contains:
 
 ## Quick Start
 
-Install the CLI:
+Install the CLI from PyPI after release:
+
+```bash
+pip install hotspot-research-cli
+```
+
+Install from a local checkout for development:
 
 ```bash
 cd packages/hotspot-cli
@@ -60,10 +66,52 @@ See [NOTICE.md](NOTICE.md) for source attribution and reference links. In short:
 
 Generated reports, virtual environments, local configs, and credentials are ignored by `.gitignore`.
 
+## Publishing
+
+### GitHub
+
+This repo includes `scripts/push-github.zsh`, which reads the GitHub token from:
+
+```text
+~/.config/hotspot-research-suite/github_token
+```
+
+The token file is local-only and must never be committed. The current machine has been configured from `/tmp/.gh_token`. To recreate it:
+
+```bash
+mkdir -p ~/.config/hotspot-research-suite
+cp /tmp/.gh_token ~/.config/hotspot-research-suite/github_token
+chmod 600 ~/.config/hotspot-research-suite/github_token
+```
+
+Push with:
+
+```bash
+scripts/push-github.zsh origin main
+```
+
+### PyPI
+
+The package name is `hotspot-research-cli`. Release is configured through GitHub Actions Trusted Publishing in `.github/workflows/publish.yml`.
+
+Configure a PyPI pending publisher with:
+
+- PyPI project: `hotspot-research-cli`
+- GitHub owner: `AdvancingTitans`
+- GitHub repository: `hotspot-research-suite`
+- Workflow filename: `publish.yml`
+- Environment: `pypi`
+
+Then publish a release by pushing a path-scoped tag:
+
+```bash
+git tag hotspot-research-cli/v0.1.0
+scripts/push-github.zsh origin hotspot-research-cli/v0.1.0
+```
+
 Run tests:
 
 ```bash
 cd packages/hotspot-cli
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
-

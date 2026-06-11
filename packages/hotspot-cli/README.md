@@ -44,8 +44,16 @@ hotspot-cli/
 
 建议使用 Python 3.10+。
 
+PyPI 发布后可直接安装：
+
 ```bash
-cd /Users/yjw/agent/hotspot-cli
+pip install hotspot-research-cli
+```
+
+本地开发安装：
+
+```bash
+cd /Users/yjw/agent/hotspot-research-suite/packages/hotspot-cli
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
@@ -202,7 +210,25 @@ registry.register("dingtalk", DingTalkChannel())
 ## 测试
 
 ```bash
-cd /Users/yjw/agent/hotspot-cli
+cd /Users/yjw/agent/hotspot-research-suite/packages/hotspot-cli
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
+## PyPI 发布
+
+包名：`hotspot-research-cli`。
+
+仓库已内置 GitHub Actions Trusted Publishing 工作流：`.github/workflows/publish.yml`。首次发布前，在 PyPI 创建 pending publisher：
+
+- Project name: `hotspot-research-cli`
+- Owner: `AdvancingTitans`
+- Repository: `hotspot-research-suite`
+- Workflow: `publish.yml`
+- Environment: `pypi`
+
+确认 PyPI 侧配置完成后，推送 tag 即可触发发布：
+
+```bash
+git tag hotspot-research-cli/v0.1.0
+scripts/push-github.zsh origin hotspot-research-cli/v0.1.0
+```

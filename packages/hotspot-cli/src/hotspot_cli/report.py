@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,13 +53,18 @@ class ReportGenerator:
             proc = subprocess.run(["python3", str(script), str(md_path), str(html_path)], capture_output=True, text=True)
             if proc.returncode == 0:
                 return
+        proc = subprocess.run([sys.executable, "-m", "hotspot_cli.simple_report_html", str(md_path), str(html_path)], capture_output=True, text=True)
+        if proc.returncode == 0:
+            return
         html_path.write_text("<pre>" + md_path.read_text(encoding="utf-8") + "</pre>", encoding="utf-8")
 
     def _render_pdf(self, html_path: Path, pdf_path: Path) -> Path | None:
         script = self.skill_dir / "scripts" / "render_pdf_weasy.py"
-        if not script.exists():
-            return None
-        proc = subprocess.run(["python3", str(script), str(html_path), str(pdf_path)], capture_output=True, text=True)
+        if script.exists():
+            argv = ["python3", str(script), str(html_path), str(pdf_path)]
+        else:
+            argv = [sys.executable, "-m", "hotspot_cli.render_pdf_weasy", str(html_path), str(pdf_path)]
+        proc = subprocess.run(argv, capture_output=True, text=True)
         if proc.returncode != 0:
             return None
         return pdf_path if pdf_path.exists() else None

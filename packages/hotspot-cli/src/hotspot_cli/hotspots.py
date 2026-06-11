@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
 
-LAST30_SCRIPT = Path("/Users/yjw/.hermes/skills/research/last30days-safe/scripts/last30days_safe.py")
+PACKAGE_LAST30_MODULE = "hotspot_cli.last30days_safe"
+LAST30_SCRIPT = Path(os.environ.get("LAST30DAYS_SAFE_SCRIPT", "/Users/yjw/.hermes/skills/research/last30days-safe/scripts/last30days_safe.py"))
 DEFAULT_PYTHON = Path("/opt/homebrew/bin/python3.12")
 
 MAINSTREAM_DOMAINS = [
@@ -118,23 +121,15 @@ class Last30DaysClient:
         sources: str = "hn,github,reddit,polymarket",
     ) -> None:
         self.script_path = script_path
-        self.python_bin = python_bin if python_bin.exists() else Path("python3")
+        self.python_bin = python_bin if python_bin.exists() else Path(sys.executable)
         self.sources = sources
 
     def collect(self, topic: str, *, limit: int = 20) -> dict:
-        if not self.script_path.exists():
-            raise HotspotError(f"找不到 last30days-safe 脚本：{self.script_path}")
-        argv = [
-            str(self.python_bin),
-            str(self.script_path),
-            topic,
-            "--emit",
-            "json",
-            "--limit",
-            str(limit),
-            "--sources",
-            self.sources,
-        ]
+        if self.script_path.exists():
+            argv = [str(self.python_bin), str(self.script_path)]
+        else:
+            argv = [str(self.python_bin), "-m", PACKAGE_LAST30_MODULE]
+        argv.extend([topic, "--emit", "json", "--limit", str(limit), "--sources", self.sources])
         try:
             proc = subprocess.run(argv, check=False, capture_output=True, text=True, timeout=45)
         except subprocess.TimeoutExpired as exc:
