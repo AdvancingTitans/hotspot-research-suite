@@ -8,7 +8,7 @@ This repository contains:
 - `skills/hotspot-research`: a tool-grounded hotspot research skill for topic discovery, scoring, multi-source verification, and report generation.
 - `packages/hotspot-cli`: a Python CLI that guides users through domain selection, hotspot selection, report generation, local saving, and Lark/Feishu distribution.
 
-The CLI now writes a deep research-report draft by default, not a short summary. Generated Markdown includes selection rationale, longitudinal analysis, cross-sectional competitive mapping, integrated insights, deep-dive sections, a 30-90 day watchlist, action recommendations, sources, and an unverified-items appendix.
+The CLI bundles the `hotspot-research` skill in the Python wheel and installs it automatically on first run or `doctor`, so users do not need Codex, Hermes, or another agent framework. It writes a deep research-report draft by default, enriches GitHub/arXiv/Hacker News/web URLs before drafting, and includes selection rationale, longitudinal analysis, cross-sectional competitive mapping, integrated insights, deep-dive sections, a 30-90 day watchlist, action recommendations, sources, and an unverified-items appendix.
 
 ## Quick Start
 

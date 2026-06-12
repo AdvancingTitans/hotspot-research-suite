@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
+import os
 import re
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from .hotspots import HotspotCandidate
+from .skill import ensure_hotspot_skill_installed
 
 
-DEFAULT_SKILL_DIR = Path("/Users/yjw/agent/hotspot-research")
+DEFAULT_SKILL_DIR = Path.home() / ".codex" / "skills" / "hotspot-research"
 
 
 @dataclass(frozen=True)
@@ -27,10 +34,22 @@ class ReportError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class SourceEvidence:
+    url: str
+    kind: str
+    title: str
+    publisher: str
+    published: str
+    facts: list[str]
+    excerpt: str = ""
+
+
 class ReportGenerator:
-    def __init__(self, output_dir: Optional[Path] = None, skill_dir: Path = DEFAULT_SKILL_DIR) -> None:
+    def __init__(self, output_dir: Optional[Path] = None, skill_dir: Optional[Path] = None, source_researcher: Optional[Any] = None) -> None:
         self.output_dir = (output_dir or Path.cwd() / "reports").resolve()
         self.skill_dir = skill_dir
+        self.source_researcher = source_researcher or SourceResearcher()
 
     def generate(self, candidate: HotspotCandidate, *, language: str = "zh") -> ReportResult:
         try:
@@ -38,18 +57,20 @@ class ReportGenerator:
         except PermissionError as exc:
             raise ReportError(f"无法创建报告目录：{self.output_dir}。请检查写入权限。") from exc
 
+        skill_dir = ensure_hotspot_skill_installed(self.skill_dir or DEFAULT_SKILL_DIR)
         slug = _slugify(candidate.title)
         md_path = (self.output_dir / f"{slug}.md").resolve()
         html_path = (self.output_dir / f"{slug}.html").resolve()
         pdf_path = (self.output_dir / f"{slug}.pdf").resolve()
         summary = _summary(candidate)
-        md_path.write_text(_render_markdown(candidate, summary, language), encoding="utf-8")
-        self._render_html(md_path, html_path)
+        sources = self.source_researcher.collect(candidate.source_urls)
+        md_path.write_text(_render_markdown(candidate, summary, language, sources, skill_dir), encoding="utf-8")
+        self._render_html(md_path, html_path, skill_dir)
         pdf_result = self._render_pdf(html_path, pdf_path)
         return ReportResult(candidate.title, md_path, html_path, pdf_result, summary)
 
-    def _render_html(self, md_path: Path, html_path: Path) -> None:
-        script = self.skill_dir / "scripts" / "simple_report_html.py"
+    def _render_html(self, md_path: Path, html_path: Path, skill_dir: Path) -> None:
+        script = skill_dir / "scripts" / "simple_report_html.py"
         if script.exists():
             proc = subprocess.run(["python3", str(script), str(md_path), str(html_path)], capture_output=True, text=True)
             if proc.returncode == 0:
@@ -60,7 +81,8 @@ class ReportGenerator:
         html_path.write_text("<pre>" + md_path.read_text(encoding="utf-8") + "</pre>", encoding="utf-8")
 
     def _render_pdf(self, html_path: Path, pdf_path: Path) -> Optional[Path]:
-        script = self.skill_dir / "scripts" / "render_pdf_weasy.py"
+        skill_dir = self.skill_dir or DEFAULT_SKILL_DIR
+        script = skill_dir / "scripts" / "render_pdf_weasy.py"
         if script.exists():
             argv = ["python3", str(script), str(html_path), str(pdf_path)]
         else:
@@ -71,17 +93,123 @@ class ReportGenerator:
         return pdf_path if pdf_path.exists() else None
 
 
-def _render_markdown(candidate: HotspotCandidate, summary: str, language: str) -> str:
+class SourceResearcher:
+    def __init__(self, timeout: int = 14) -> None:
+        self.timeout = timeout
+        self.github_token_file = Path(os.environ.get("GITHUB_TOKEN_FILE", str(Path.home() / ".config" / "github" / "token")))
+
+    def collect(self, urls: list[str]) -> list[SourceEvidence]:
+        out: list[SourceEvidence] = []
+        for url in urls[:12]:
+            try:
+                out.append(self.fetch(url))
+            except Exception:
+                out.append(SourceEvidence(url=url, kind="public", title=_url_label(url), publisher=_publisher(url), published="暂未确认", facts=["来源可访问性或解析失败，保留 URL 供人工复核。"]))
+        return out
+
+    def fetch(self, url: str) -> SourceEvidence:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.netloc.lower()
+        if host == "github.com" and len(parsed.path.strip("/").split("/")) >= 2:
+            return self._github(url)
+        if host in {"arxiv.org", "export.arxiv.org"}:
+            return self._arxiv(url)
+        if "news.ycombinator.com" in host:
+            return self._hn(url)
+        return self._generic(url)
+
+    def _json(self, url: str) -> Any:
+        headers = {"User-Agent": "hotspot-research-cli/0.1.3 (+source enrichment)", "Accept": "application/json,text/plain;q=0.8,*/*;q=0.5"}
+        if "api.github.com" in url and self.github_token_file.exists():
+            token = self.github_token_file.read_text(encoding="utf-8").strip()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec: fixed public source URLs
+            raw = resp.read(2_000_000)
+            return json.loads(raw.decode(resp.headers.get_content_charset() or "utf-8", errors="replace"))
+
+    def _text(self, url: str) -> str:
+        req = urllib.request.Request(url, headers={"User-Agent": "hotspot-research-cli/0.1.3 (+source enrichment)"})
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec: public source URLs from candidate list
+            raw = resp.read(1_500_000)
+            return raw.decode(resp.headers.get_content_charset() or "utf-8", errors="replace")
+
+    def _github(self, url: str) -> SourceEvidence:
+        parts = urllib.parse.urlparse(url).path.strip("/").split("/")
+        owner, repo = parts[0], parts[1]
+        data = self._json(f"https://api.github.com/repos/{owner}/{repo}")
+        topics = data.get("topics") or []
+        facts = [
+            f"stars={int(data.get('stargazers_count') or 0):,}",
+            f"forks={int(data.get('forks_count') or 0):,}",
+            f"open_issues={int(data.get('open_issues_count') or 0):,}",
+            f"created_at={data.get('created_at') or 'n/a'}",
+            f"updated_at={data.get('updated_at') or 'n/a'}",
+            f"pushed_at={data.get('pushed_at') or 'n/a'}",
+            f"language={data.get('language') or 'n/a'}",
+            f"license={(data.get('license') or {}).get('spdx_id') or 'n/a'}",
+        ]
+        if topics:
+            facts.append("topics=" + ", ".join(str(topic) for topic in topics[:8]))
+        return SourceEvidence(
+            url=url,
+            kind="github",
+            title=str(data.get("full_name") or f"{owner}/{repo}"),
+            publisher="GitHub API",
+            published=str(data.get("created_at") or "暂未确认"),
+            facts=facts,
+            excerpt=_short_sentence(str(data.get("description") or ""), 260),
+        )
+
+    def _arxiv(self, url: str) -> SourceEvidence:
+        match = re.search(r"(\d{4}\.\d{4,5})(v\d+)?", url)
+        paper_id = match.group(1) if match else url.rstrip("/").split("/")[-1]
+        text = self._text(f"https://export.arxiv.org/api/query?id_list={urllib.parse.quote(paper_id)}")
+        root = ET.fromstring(text)
+        ns = {"a": "http://www.w3.org/2005/Atom"}
+        entry = root.find("a:entry", ns)
+        if entry is None:
+            raise ReportError(f"无法解析 arXiv 来源：{url}")
+        title = " ".join((entry.findtext("a:title", default="", namespaces=ns) or "").split())
+        published = entry.findtext("a:published", default="", namespaces=ns) or "暂未确认"
+        authors = [node.findtext("a:name", default="", namespaces=ns) or "" for node in entry.findall("a:author", ns)]
+        summary = " ".join((entry.findtext("a:summary", default="", namespaces=ns) or "").split())
+        facts = [f"paper_id={paper_id}", f"submitted={published}", "authors=" + ", ".join([a for a in authors if a][:6])]
+        return SourceEvidence(url=url, kind="arxiv", title=title or paper_id, publisher="arXiv", published=published, facts=facts, excerpt=_short_sentence(summary, 420))
+
+    def _hn(self, url: str) -> SourceEvidence:
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        item_id = (query.get("id") or [""])[0]
+        data = self._json(f"https://hn.algolia.com/api/v1/items/{urllib.parse.quote(item_id)}") if item_id else {}
+        title = str(data.get("title") or _url_label(url))
+        facts = [f"points={data.get('points') or 0}", f"comments={len(data.get('children') or [])}", f"created_at={data.get('created_at') or 'n/a'}"]
+        if data.get("url"):
+            facts.append(f"linked_url={data.get('url')}")
+        return SourceEvidence(url=url, kind="hn", title=title, publisher="Hacker News", published=str(data.get("created_at") or "暂未确认"), facts=facts, excerpt="HN 讨论只能作为热度与实践问题发现线索，关键事实仍需回到原始链接复核。")
+
+    def _generic(self, url: str) -> SourceEvidence:
+        text = self._text(url)
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
+        desc_match = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']', text, re.I | re.S)
+        title = _clean_html(title_match.group(1)) if title_match else _url_label(url)
+        excerpt = _clean_html(desc_match.group(1)) if desc_match else ""
+        return SourceEvidence(url=url, kind="web", title=title, publisher=_publisher(url), published="暂未确认", facts=["已抓取页面标题/摘要；发布日期和核心数据需人工复核。"], excerpt=_short_sentence(excerpt, 320))
+
+
+def _render_markdown(candidate: HotspotCandidate, summary: str, language: str, sources: list[SourceEvidence], skill_dir: Path) -> str:
     today = dt.date.today().isoformat()
     start = (dt.date.today() - dt.timedelta(days=30)).isoformat()
     if language == "en":
-        return _render_deep_markdown_en(candidate, summary, start, today)
-    return _render_deep_markdown_zh(candidate, summary, start, today)
+        return _render_deep_markdown_en(candidate, summary, start, today, sources, skill_dir)
+    return _render_deep_markdown_zh(candidate, summary, start, today, sources, skill_dir)
 
 
-def _render_deep_markdown_zh(candidate: HotspotCandidate, summary: str, start: str, today: str) -> str:
+def _render_deep_markdown_zh(candidate: HotspotCandidate, summary: str, start: str, today: str, sources: list[SourceEvidence], skill_dir: Path) -> str:
     signals = _signal_table(candidate)
-    source_table = _source_table(candidate)
+    source_table = _source_table(candidate, sources)
+    source_profiles = _source_profiles(sources)
+    skill_basis = _skill_basis(skill_dir)
     source_types = "、".join(candidate.sources) if candidate.sources else "公开来源"
     evidence_quality = _evidence_quality(candidate)
     return f"""# {candidate.title}：近30天热点研究报告
@@ -92,6 +220,7 @@ def _render_deep_markdown_zh(candidate: HotspotCandidate, summary: str, start: s
 > 输出语言：中文，关键术语中英对照  
 > 访问日期：{today}  
 > 证据来源类型：{source_types}  
+> 报告框架：内嵌 hotspot-research skill（{skill_dir}）  
 
 ## 执行摘要
 
@@ -102,6 +231,12 @@ def _render_deep_markdown_zh(candidate: HotspotCandidate, summary: str, start: s
 | 核心问题 | 本报告重点回答三个问题：第一，最近 30 天为什么是观察窗口；第二，这个热点在历史路径上处于哪个阶段；第三，横向竞争或替代路径如何影响未来 30-90 天走势。 |
 | 证据边界 | {evidence_quality} 本报告不会把单一来源的热度直接解释为收入、市场份额或长期胜负；未能从现有来源直接确认的内容会放入“未确认与后续验证”。 |
 | 初步判断 | 该主题适合进入正式研究，因为它具备“近期触发 + 可验证来源 + 后续可跟踪指标”三项条件。进一步研究应优先补充官方公告、监管/政策文件、市场规模口径、企业案例与财务数据。 |
+
+## 报告生成依据
+
+本报告由 CLI 内嵌的 `hotspot-research` skill 生成。该 skill 已随 Python 包安装到本机，不依赖用户额外安装 Codex、Hermes 或其他 agent 框架。CLI 负责三件事：第一，安装并读取 skill 的结构化研究框架；第二，对候选热点的 URL 做二次取证；第三，将已确认事实、推断和未确认事项分层写入报告。
+
+{skill_basis}
 
 ## 一句话定义
 
@@ -143,6 +278,10 @@ def _render_deep_markdown_zh(candidate: HotspotCandidate, summary: str, start: s
 基于当前候选证据，「{candidate.title}」至少已经越过“无来源概念”阶段。它拥有明确来源 URL 和可读的数据依据：
 
 {signals}
+
+二次取证后的来源画像如下：
+
+{source_profiles}
 
 这意味着研究者可以继续沿着来源追溯原始信息，而不是依赖二手转述。若来源以 GitHub 为主，则重点验证开发者采用、更新频率、issue 质量和生态依赖；若来源以论文为主，则重点验证方法、数据集、实验可复现性和同行引用；若来源以媒体为主，则重点验证报道是否来自原始采访或官方披露；若来源以社区为主，则只能作为早期发现线索，不能直接作为事实结论。
 
@@ -301,7 +440,7 @@ def _render_deep_markdown_zh(candidate: HotspotCandidate, summary: str, start: s
 """
 
 
-def _render_deep_markdown_en(candidate: HotspotCandidate, summary: str, start: str, today: str) -> str:
+def _render_deep_markdown_en(candidate: HotspotCandidate, summary: str, start: str, today: str, sources: list[SourceEvidence], skill_dir: Path) -> str:
     source_types = ", ".join(candidate.sources) if candidate.sources else "public sources"
     return f"""# {candidate.title}: Last-30-Days Hotspot Research Report
 
@@ -310,12 +449,23 @@ def _render_deep_markdown_en(candidate: HotspotCandidate, summary: str, start: s
 > Domain: {candidate.domain}  
 > Access date: {today}  
 > Source classes: {source_types}  
+> Framework: bundled hotspot-research skill installed at {skill_dir}  
 
 ## Executive Summary
 
 {summary}
 
 This is a deep research draft rather than a short summary. It separates confirmed evidence from assumptions, uses the available public-source signals as the starting point, and turns the selected topic into a structured research agenda: one-sentence definition, longitudinal analysis, cross-sectional competitive map, integrated insights, deep-dive sections, action recommendations, source table, and an explicit unverified-items appendix.
+
+## Skill And Source Basis
+
+This report is generated through the bundled `hotspot-research` skill that ships with the Python package. It does not require the user to have Codex, Hermes, or another agent framework installed. The CLI installs the skill resources locally, reads the research framework, enriches the selected URLs, and separates confirmed facts from follow-up verification tasks.
+
+{_skill_basis(skill_dir)}
+
+## Source Profiles
+
+{_source_profiles(sources)}
 
 ## One-Sentence Definition
 
@@ -369,7 +519,7 @@ Use a four-part evidence gate: original source, numeric support, date clarity, a
 
 ## Sources
 
-{_source_table(candidate)}
+{_source_table(candidate, sources)}
 
 ## Appendix: Unverified Items
 
@@ -388,7 +538,21 @@ def _source_lines(candidate: HotspotCandidate) -> str:
     return "\n".join(f"- {url}" for url in candidate.source_urls) + "\n"
 
 
-def _source_table(candidate: HotspotCandidate) -> str:
+def _source_table(candidate: HotspotCandidate, enriched_sources: Optional[list[SourceEvidence]] = None) -> str:
+    if enriched_sources:
+        rows = ["| 编号 | 标题 | 发布方 | 日期 | URL | 已提取事实 |", "|---|---|---|---|---|---|"]
+        for index, item in enumerate(enriched_sources, 1):
+            rows.append(
+                "| S{} | {} | {} | {} | {} | {} |".format(
+                    index,
+                    _escape_table(item.title),
+                    _escape_table(item.publisher),
+                    _escape_table(item.published),
+                    item.url,
+                    _escape_table("; ".join(item.facts[:8])),
+                )
+            )
+        return "\n".join(rows)
     if not candidate.source_urls:
         return "| 编号 | URL | 来源类型 | 支撑事实 |\n|---|---|---|---|\n| S1 | 暂无 URL | 待补充 | 需要补充原始来源后再下结论 |\n"
     rows = ["| 编号 | URL | 来源类型 | 支撑事实 |", "|---|---|---|---|"]
@@ -397,6 +561,37 @@ def _source_table(candidate: HotspotCandidate) -> str:
         source_type = sources[min(index - 1, len(sources) - 1)]
         rows.append(f"| S{index} | {url} | {source_type} | 支撑选题存在公开来源；具体事实需沿原始页面继续复核。 |")
     return "\n".join(rows)
+
+
+def _source_profiles(sources: list[SourceEvidence]) -> str:
+    if not sources:
+        return "暂无可解析来源画像；报告仅能基于候选 evidence 形成研究框架，需补充原始来源。"
+    blocks = []
+    for index, item in enumerate(sources, 1):
+        facts = "\n".join(f"- {fact}" for fact in item.facts[:10])
+        excerpt = f"\n\n摘录/摘要：{item.excerpt}" if item.excerpt else ""
+        blocks.append(
+            f"### S{index}. {item.title}\n\n"
+            f"- 来源类型：{item.kind}\n"
+            f"- 发布方：{item.publisher}\n"
+            f"- 日期：{item.published}\n"
+            f"- URL：{item.url}\n"
+            f"- 已提取事实：\n{facts}{excerpt}"
+        )
+    return "\n\n".join(blocks)
+
+
+def _skill_basis(skill_dir: Path) -> str:
+    template = skill_dir / "assets" / "report-template.md"
+    framework = skill_dir / "references" / "market-research-frameworks.md"
+    parts = []
+    if template.exists():
+        parts.append("- 已加载报告模板：`assets/report-template.md`，用于保持“一句话定义、纵向分析、横向分析、横纵交汇洞察、信息来源”的结构。")
+    if framework.exists():
+        parts.append("- 已加载研究框架：`references/market-research-frameworks.md`，用于约束 TAM/SAM/SOM、PESTLE、Porter、SWOT、情景分析等框架的使用边界。")
+    if not parts:
+        parts.append("- 未找到本地 skill 模板文件，已使用包内默认结构生成。")
+    return "\n".join(parts)
 
 
 def _signal_table(candidate: HotspotCandidate) -> str:
@@ -478,6 +673,32 @@ def _short_sentence(text: str, limit: int = 140) -> str:
     if not text:
         return "当前候选未提供足够 evidence，需要补充来源。"
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _publisher(url: str) -> str:
+    host = urllib.parse.urlparse(url).netloc.lower()
+    return host.replace("www.", "") or "public web"
+
+
+def _url_label(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    return (parsed.netloc + parsed.path).strip("/") or url
+
+
+def _clean_html(text: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", text or "")
+    text = (
+        text.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", '"')
+        .replace("&#39;", "'")
+    )
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _escape_table(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text)).replace("|", "\\|").strip()
 
 
 def _summary(candidate: HotspotCandidate) -> str:

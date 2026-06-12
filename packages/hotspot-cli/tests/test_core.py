@@ -5,7 +5,29 @@ from pathlib import Path
 from hotspot_cli.config import ConfigManager
 from hotspot_cli.distribution import LarkChannel
 from hotspot_cli.hotspots import HotspotCandidate, HotspotFilter, HotspotService
-from hotspot_cli.report import ReportGenerator
+from hotspot_cli.report import ReportGenerator, SourceEvidence
+from hotspot_cli.skill import ensure_hotspot_skill_installed
+
+
+class StaticResearcher:
+    def collect(self, urls: list[str]) -> list[SourceEvidence]:
+        return [
+            SourceEvidence(
+                url=urls[0] if urls else "https://example.com/source",
+                kind="github",
+                title="google/adk-python",
+                publisher="GitHub API",
+                published="2025-04-01T00:00:00Z",
+                facts=[
+                    "stars=20,076",
+                    "forks=3,551",
+                    "open_issues=885",
+                    "updated_at=2026-06-12T00:02:03Z",
+                    "license=Apache-2.0",
+                ],
+                excerpt="An agent development kit for building, evaluating, and deploying agents.",
+            )
+        ]
 
 
 class CoreTests(unittest.TestCase):
@@ -63,7 +85,7 @@ class CoreTests(unittest.TestCase):
     def test_report_generator_writes_markdown_and_html(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)
-            generator = ReportGenerator(output_dir=tmp_path, skill_dir=tmp_path)
+            generator = ReportGenerator(output_dir=tmp_path, skill_dir=tmp_path, source_researcher=StaticResearcher())
             candidate = HotspotCandidate(
                 title="个人手机智能体",
                 domain="AI手机",
@@ -83,7 +105,7 @@ class CoreTests(unittest.TestCase):
     def test_report_generator_writes_deep_research_report_not_summary_stub(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)
-            generator = ReportGenerator(output_dir=tmp_path, skill_dir=tmp_path)
+            generator = ReportGenerator(output_dir=tmp_path, skill_dir=tmp_path, source_researcher=StaticResearcher())
             candidate = HotspotCandidate(
                 title="Agent Development Kits 进入可度量竞争阶段",
                 domain="开源 AI",
@@ -107,8 +129,22 @@ class CoreTests(unittest.TestCase):
             self.assertIn("专题深挖一", markdown)
             self.assertIn("未来 30-90 天观察指标", markdown)
             self.assertIn("附录：未确认与后续验证", markdown)
+            self.assertIn("二次取证后的来源画像", markdown)
+            self.assertIn("stars=20,076", markdown)
+            self.assertIn("内嵌 hotspot-research skill", markdown)
             self.assertNotIn("本节应", markdown)
             self.assertNotIn("should be expanded", markdown)
+
+    def test_embedded_hotspot_skill_installs_to_target_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "hotspot-research"
+
+            installed = ensure_hotspot_skill_installed(target)
+
+            self.assertEqual(installed, target)
+            self.assertTrue((target / "SKILL.md").exists())
+            self.assertTrue((target / "assets" / "report-template.md").exists())
+            self.assertTrue((target / "references" / "market-research-frameworks.md").exists())
 
     def test_lark_channel_builds_message_and_file_commands(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -15,6 +15,7 @@ from .config import ConfigError, ConfigManager, DEFAULT_TEMPLATE
 from .distribution import ChannelRegistry, DistributionError, FEISHU_CLI_DOCS_URL, lark_cli_status
 from .hotspots import HotspotCandidate, HotspotError, HotspotService
 from .report import ReportError, ReportGenerator
+from .skill import ensure_hotspot_skill_installed
 
 
 app = typer.Typer(help="交互式热点研究报告 CLI")
@@ -190,6 +191,13 @@ def doctor(
     else:
         console.print(f"[yellow]飞书 CLI：{message}[/yellow]")
         console.print("安装并配置后再使用 --push-lark 或 send 命令。")
+
+    try:
+        skill_dir = ensure_hotspot_skill_installed()
+    except OSError as exc:
+        console.print(f"[red]hotspot-research skill 安装失败：{exc}[/red]")
+    else:
+        console.print(f"[green]hotspot-research skill 已就绪：{skill_dir}[/green]")
 
 
 @config_app.command("show")

@@ -2,6 +2,8 @@
 
 一款跨平台 Python CLI，用交互式问答引导用户通过 `last30days-safe` 选择近 30 天客观热点，并按 `hotspot-research` 结构生成本地研究报告；支持通过 `lark-cli` 将选题简介和报告文件推送到飞书群。分发层已预留微信、钉钉等渠道扩展接口。
 
+CLI 的 PyPI wheel 已内嵌 `hotspot-research` skill。用户不需要安装 Codex、Hermes 或其他 agent 框架；首次运行 `run` 或 `doctor` 时，CLI 会自动把 skill 资源安装到本机，并用这些模板、脚本和研究框架生成报告。
+
 ## 功能
 
 - 交互式分支流程：
@@ -22,6 +24,11 @@
   - 专题深挖、未来 30-90 天观察指标、行动建议
   - 信息来源表、未确认事项与后续验证路径
   - 所有展开内容仅基于候选 evidence 与 URL，不编造融资额、市场规模或收入数据
+- 内嵌 skill + 二次取证：
+  - 自动安装包内 `hotspot-research` skill
+  - 读取 skill 的报告模板和市场研究框架
+  - 对 GitHub / arXiv / Hacker News / 普通网页 URL 做二次抓取
+  - 将 stars、forks、issues、论文标题、作者、摘要、讨论数据等写入“来源画像”
 - 飞书推送：
   - 文本简介：`lark-cli im +messages-send`
   - 报告文件：`lark-cli im +messages-send --file`
@@ -74,6 +81,8 @@ python3 -m hotspot_cli doctor --fix-entrypoint
 python3 -m hotspot_cli doctor
 ```
 
+`doctor` 会同时检查命令入口、飞书 CLI 和内嵌 `hotspot-research` skill 安装状态。
+
 如果曾经因为 0.1.0 的 Python 版本限制安装失败，重新执行：
 
 ```bash
@@ -114,7 +123,7 @@ hotspot-research run --output-dir ./reports
    - 非法输入会提示并重新询问。
 5. 确认选题后生成深度研究报告，并输出本地绝对路径。
 
-生成报告的默认目标是可继续编辑的长文研究底稿：CLI 会把候选热点的来源、评分、证据字段和 URL 组织成完整研究框架；如果当前数据不足以支持市场规模、融资、收入、监管状态等强结论，会明确列入“未确认与后续验证”，而不是用模型猜测补齐。
+生成报告的默认目标是可继续编辑的长文研究底稿：CLI 会把候选热点的来源、评分、证据字段和 URL 组织成完整研究框架，并对可识别 URL 做二次取证；如果当前数据不足以支持市场规模、融资、收入、监管状态等强结论，会明确列入“未确认与后续验证”，而不是用模型猜测补齐。
 
 ## 飞书配置
 

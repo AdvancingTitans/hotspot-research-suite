@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## [0.1.3] - 2026-06-12
 
+- Bundle the standalone `hotspot-research` skill inside the Python wheel and install it automatically on first run or `doctor`.
+- Generate reports through the bundled skill resources so users do not need Codex, Hermes, or another agent framework installed.
+- Add second-pass source enrichment for GitHub, arXiv, Hacker News, and generic web URLs before drafting.
 - Replace the short report stub with a deep research-report draft modeled on the daily automation output.
 - Add full sections for selection rationale, longitudinal analysis, competitive map, integrated insights, deep dives, future watchlist, action recommendations, sources, and unverified-items appendix.
 - Keep the expanded report grounded in candidate evidence and URLs instead of inventing market-size, funding, or revenue numbers.
