@@ -50,6 +50,24 @@ PyPI 发布后可直接安装：
 pip install hotspot-research-cli
 ```
 
+如果安装成功但 shell 提示 `command not found: hotspot-research`，说明 Python 的 user-base bin 目录不在 `PATH` 中。无需手动创建软链，可直接使用不依赖 PATH 的模块入口：
+
+```bash
+python3 -m hotspot_cli run --output-dir ./reports
+```
+
+通过模块入口启动时，CLI 会尝试自动创建 `~/.local/bin/hotspot-research` shim；也可以显式修复：
+
+```bash
+python3 -m hotspot_cli doctor --fix-entrypoint
+```
+
+也可以先运行诊断：
+
+```bash
+python3 -m hotspot_cli doctor
+```
+
 如果曾经因为 0.1.0 的 Python 版本限制安装失败，重新执行：
 
 ```bash
@@ -92,7 +110,7 @@ hotspot-research run --output-dir ./reports
 
 ## 飞书配置
 
-首次使用飞书前，先按 `lark-cli` 官方流程配置：
+CLI 会调用本机已安装的 `lark-cli`。如果本机没有 `lark-cli`，请先从飞书官方页面安装：<https://www.feishu.cn/feishu-cli>。首次使用飞书前，先按 `lark-cli` 官方流程配置：
 
 ```bash
 lark-cli config init --new

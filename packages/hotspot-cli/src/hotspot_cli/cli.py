@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
+import shutil
 from typing import Optional, Union
 
 import typer
@@ -9,7 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .config import ConfigError, ConfigManager, DEFAULT_TEMPLATE
-from .distribution import ChannelRegistry, DistributionError
+from .distribution import ChannelRegistry, DistributionError, FEISHU_CLI_DOCS_URL, lark_cli_status
 from .hotspots import HotspotCandidate, HotspotError, HotspotService
 from .report import ReportError, ReportGenerator
 
@@ -20,6 +23,30 @@ lark_app = typer.Typer(help="飞书配置")
 config_app.add_typer(lark_app, name="lark")
 app.add_typer(config_app, name="config")
 console = Console()
+
+
+def _install_entrypoint_shim() -> Path:
+    bin_dir = Path.home() / ".local" / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    shim = bin_dir / "hotspot-research"
+    script = f"#!/bin/sh\nexec {shlex_quote(sys.executable)} -m hotspot_cli \"$@\"\n"
+    shim.write_text(script, encoding="utf-8")
+    shim.chmod(0o755)
+    return shim
+
+
+def _ensure_entrypoint_hint() -> None:
+    if shutil.which("hotspot-research") is not None or os.name == "nt":
+        return
+    try:
+        shim = _install_entrypoint_shim()
+    except OSError:
+        return
+    console.print(f"[yellow]已创建命令入口：{shim}。若当前 shell 仍找不到命令，请将 ~/.local/bin 加入 PATH。[/yellow]")
+
+
+def shlex_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 def _print_candidates(title: str, items: list[HotspotCandidate]) -> None:
@@ -52,10 +79,13 @@ def _resolve_domain(service: HotspotService) -> str:
 
     refresh_index = 0
     while True:
-        console.print("[bold]正在使用 last30days-safe 拉取主流研究领域...[/bold]")
         domains = service.top_domains(refresh_index=refresh_index)
         if not domains:
-            raise HotspotError("未获取到热门领域。请检查网络，或直接输入指定领域。")
+            console.print("[yellow]暂时没有拉到足够可信的领域候选，已扩大搜索范围。[/yellow]")
+            refresh_index += 1
+            if refresh_index > 2:
+                raise HotspotError("未获取到热门领域。请检查网络，或直接输入指定领域。")
+            continue
         _print_candidates("最近30天主流研究领域 TOP10", domains)
         choice = _choose_from_list(domains)
         if choice == "refresh":
@@ -67,10 +97,13 @@ def _resolve_domain(service: HotspotService) -> str:
 def _resolve_hotspot(service: HotspotService, domain: str) -> HotspotCandidate:
     refresh_index = 0
     while True:
-        console.print(f"[bold]正在拉取「{domain}」近30天客观热点 TOP10...[/bold]")
         hotspots = service.top_hotspots(domain, refresh_index=refresh_index)
         if not hotspots:
-            raise HotspotError("未获取到符合规则的客观热点。可输入 refresh 再试，或换一个领域。")
+            console.print("[yellow]这批候选证据不足，正在换一批来源。[/yellow]")
+            refresh_index += 1
+            if refresh_index > 2:
+                raise HotspotError("未获取到足够可信的客观热点。建议换一个更具体的领域。")
+            continue
         _print_candidates(f"{domain} 近30天客观热点 TOP10", hotspots)
         choice = _choose_from_list(hotspots)
         if choice == "refresh":
@@ -87,7 +120,8 @@ def run(
     language: str = typer.Option("zh", "--language", help="报告语言：zh/en"),
 ) -> None:
     """启动交互式问答，选择领域和热点，生成报告并可推送飞书。"""
-    console.print(Panel.fit("Hotspot Research CLI", subtitle="last30days-safe + hotspot-research"))
+    _ensure_entrypoint_hint()
+    console.print(Panel.fit("Hotspot Research CLI", subtitle="事实驱动的热点研究报告"))
     config_manager = ConfigManager(config_path)
     service = HotspotService()
     try:
@@ -123,8 +157,39 @@ def run(
             console.print("[green]已调用 lark-cli 推送飞书。[/green]")
         except (ConfigError, DistributionError) as exc:
             console.print(f"[red]飞书推送失败：{exc}[/red]")
-            console.print("[yellow]排查：确认 lark-cli 已 config init、bot/user 有 IM 与 Drive 权限、chat_id 正确。[/yellow]")
+            console.print(f"[yellow]排查：确认已安装飞书 CLI（{FEISHU_CLI_DOCS_URL}）、已运行 lark-cli config init、bot/user 有 IM 与 Drive 权限、chat_id 正确。[/yellow]")
             raise typer.Exit(code=2) from exc
+
+
+@app.command("doctor")
+def doctor(
+    fix_entrypoint: bool = typer.Option(False, "--fix-entrypoint", help="当前 PATH 找不到命令时，自动创建 ~/.local/bin/hotspot-research shim"),
+) -> None:
+    """检查本机命令入口、Python 环境和飞书 CLI 可用性。"""
+    command_path = shutil.which("hotspot-research")
+    module_hint = "python3 -m hotspot_cli run --output-dir ./reports"
+    console.print("[bold]Hotspot Research CLI 检查[/bold]")
+    if command_path:
+        console.print(f"[green]命令入口可用：{command_path}[/green]")
+    elif fix_entrypoint and os.name != "nt":
+        try:
+            shim = _install_entrypoint_shim()
+        except OSError as exc:
+            console.print(f"[red]创建命令入口失败：{exc}[/red]")
+        else:
+            console.print(f"[green]已创建命令入口：{shim}[/green]")
+            console.print("如果当前 shell 仍提示 command not found，请将 ~/.local/bin 加入 PATH 后重新打开终端。")
+    else:
+        console.print("[yellow]当前 PATH 找不到 hotspot-research。[/yellow]")
+        console.print(f"可直接使用模块入口：{module_hint}")
+        console.print("也可以运行：python3 -m hotspot_cli doctor --fix-entrypoint")
+
+    ok, message = lark_cli_status()
+    if ok:
+        console.print(f"[green]飞书 CLI：{message}[/green]")
+    else:
+        console.print(f"[yellow]飞书 CLI：{message}[/yellow]")
+        console.print("安装并配置后再使用 --push-lark 或 send 命令。")
 
 
 @config_app.command("show")

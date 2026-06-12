@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.2] - 2026-06-12
+
+- Broaden hotspot discovery across GitHub, Hacker News, arXiv, and Reddit public signals.
+- Make `refresh` fetch a genuinely different batch via pagination/query rotation.
+- Remove internal skill-status narration from the interactive flow.
+- Add `doctor` diagnostics for command entrypoints and Feishu/Lark CLI readiness.
+- Add automatic `~/.local/bin/hotspot-research` shim repair via `run` and `doctor --fix-entrypoint`.
+- Document `python3 -m hotspot_cli run` as a PATH-independent fallback.
+
 ## [0.1.1] - 2026-06-12
 
 - Add Python 3.9 compatibility for macOS system `pip3`.

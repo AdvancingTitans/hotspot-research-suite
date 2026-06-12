@@ -16,6 +16,24 @@ Install the CLI from PyPI. Python 3.9+ is supported:
 pip install hotspot-research-cli
 ```
 
+If your shell cannot find the `hotspot-research` command after a user install, use the module entrypoint, which does not depend on shell `PATH`:
+
+```bash
+python3 -m hotspot_cli run --output-dir ./reports
+```
+
+When started through the module entrypoint, the CLI will try to create a lightweight `~/.local/bin/hotspot-research` shim automatically. You can also repair it explicitly:
+
+```bash
+python3 -m hotspot_cli doctor --fix-entrypoint
+```
+
+You can also run diagnostics:
+
+```bash
+python3 -m hotspot_cli doctor
+```
+
 Install from a local checkout for development:
 
 ```bash
@@ -38,6 +56,8 @@ hotspot-research config lark setup \
   --chat-id oc_xxxxxxxxxxxxxxxxx \
   --identity bot
 ```
+
+The CLI calls a locally installed `lark-cli`. If it is missing, install Feishu CLI from the official page: <https://www.feishu.cn/feishu-cli>, then run `lark-cli config init`.
 
 Generate and push to Lark:
 
