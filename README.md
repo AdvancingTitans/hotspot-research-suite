@@ -18,6 +18,7 @@ pip install --upgrade hotspot-research-cli
 Start the topic assistant:
 
 ```bash
+hotspot-research setup
 hotspot-research run --output-dir ./briefs
 ```
 
@@ -30,7 +31,9 @@ hotspot-research brief "中文大模型安全评测的新兴低竞争切口" --f
 Configure structured LLM analysis:
 
 ```bash
-hotspot-research config llm setup --provider openai --model gpt-4o-mini
+hotspot-research config model list
+hotspot-research config model setup --provider deepseek --model deepseek/deepseek-chat
+hotspot-research config lark auth --init --recommend --chat-id oc_xxxxxxxxx
 ```
 
 ## What The CLI Produces

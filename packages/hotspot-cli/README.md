@@ -21,6 +21,17 @@ python3 -m hotspot_cli doctor --fix-entrypoint
 
 ## 快速开始
 
+首次使用建议先跑配置向导：
+
+```bash
+hotspot-research setup
+```
+
+向导会做两件事：
+
+- 引导选择模型服务商并保存 API Key。
+- 可选引导配置飞书 CLI、完成用户授权，并保存目标群聊 `chat_id`。
+
 启动交互式选题助手：
 
 ```bash
@@ -35,28 +46,38 @@ hotspot-research brief "中文大模型安全评测的新兴低竞争切口" \
   --output-dir ./briefs
 ```
 
-配置 LLM 结构化分析：
+查看支持的模型服务商：
 
 ```bash
-hotspot-research config llm setup \
-  --provider openai \
-  --model gpt-4o-mini
+hotspot-research config model list
 ```
 
-也支持 Anthropic 和本地 Ollama：
+交互式配置模型：
 
 ```bash
-hotspot-research config llm setup --provider anthropic --model claude-3-5-sonnet
-hotspot-research config llm setup --provider ollama --model ollama/qwen2.5
+hotspot-research config model setup
 ```
 
-没有 LLM API Key 也能运行，CLI 会使用本地规则分析器生成可用简报；配置 LLM 后，细分方向、研究缺口和标题建议会更稳定。
+也可以通过参数配置：
+
+```bash
+hotspot-research config model setup --provider deepseek --model deepseek/deepseek-chat
+hotspot-research config model setup --provider openai --model gpt-4o-mini
+hotspot-research config model setup --provider anthropic --model claude-3-5-sonnet-latest
+hotspot-research config model setup --provider ollama --model ollama/qwen2.5:14b
+hotspot-research config model setup \
+  --provider openai-compatible \
+  --model openai/your-model-name \
+  --base-url https://api.example.com/v1
+```
+
+没有模型 API Key 也能运行，CLI 会使用本地规则分析器生成可用简报；配置模型后，细分方向、研究缺口和标题建议会更稳定。
 
 ## 默认交互流程
 
 ### 流程一：没思路时发现新兴高价值选题
 
-1. CLI 询问你感兴趣的领域，支持自由输入，例如 `大模型智能体`、`多模态推理`、`中文大模型安全`、`具身智能`，也可以输入 `随便推荐`、`AI 通用`、`只看 cs.AI`。
+1. CLI 用普通语言询问你如何开始：手动输入领域、让工具推荐近期高价值 AI 选题、偏学术论文方向、偏产业产品/开源方向。
 2. `last30days-safe` 拉取最近 7-30 天公开信号，来源包括 Hacker News、GitHub、Reddit、Polymarket，以及包内保留的 arXiv/GitHub/HN 二次信号能力。
 3. LLM 或本地规则分析器提炼 5-8 个具体细分方向，而不是泛泛的“多模态大模型”。
 4. Rich 表格展示：
@@ -169,37 +190,100 @@ class TopicBrief(BaseModel):
 - `--refresh` 会忽略缓存重新抓取。
 - 7 天和 30 天窗口会传入 `last30days-safe --days` 执行真实窗口查询；30-60 天对照在 v1 中是保守参考信号，后续会接入 OpenAlex/Google Trends/新闻量增强历史趋势。
 
-## 配置
+## 模型配置
 
-LLM 配置保存在：
+模型配置保存在：
 
 ```text
 ~/.hotspot-research-cli/.env
 ```
 
-支持变量：
+支持的内置服务商：
+
+- `deepseek`：默认推荐，中文分析性价比较高。
+- `openai`：OpenAI 官方模型。
+- `anthropic`：Claude 系列。
+- `openrouter`：多模型聚合。
+- `siliconflow`：国内 OpenAI-Compatible 聚合服务。
+- `moonshot`：Moonshot Kimi。
+- `qwen`：通义千问 DashScope OpenAI-Compatible。
+- `ollama`：本地模型。
+- `openai-compatible`：任意兼容 OpenAI Chat Completions 的网关，例如 OneAPI、LiteLLM Proxy、火山/智谱兼容接口等。
+
+常用命令：
+
+```bash
+hotspot-research config model list
+hotspot-research config model show
+hotspot-research config model setup
+```
+
+底层变量示例：
 
 ```env
-HOTSPOT_LLM_PROVIDER=openai
-HOTSPOT_LLM_MODEL=gpt-4o-mini
+HOTSPOT_LLM_PROVIDER=deepseek
+HOTSPOT_LLM_MODEL=deepseek/deepseek-chat
+HOTSPOT_LLM_API_KEY=
+HOTSPOT_LLM_BASE_URL=
+HOTSPOT_DEEPSEEK_API_KEY=
 HOTSPOT_OPENAI_API_KEY=sk-...
 OPENAI_API_KEY=sk-...
 HOTSPOT_ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_API_KEY=sk-ant-...
+HOTSPOT_OPENROUTER_API_KEY=
+HOTSPOT_SILICONFLOW_API_KEY=
+HOTSPOT_MOONSHOT_API_KEY=
+HOTSPOT_QWEN_API_KEY=
 HOTSPOT_OLLAMA_BASE_URL=http://localhost:11434
 HOTSPOT_CACHE_TTL_SECONDS=21600
 ```
 
 ## 飞书推送
 
-飞书配置与简报发送：
+CLI 调用本机已安装的 `lark-cli`。设计参考了 `larksuite/cli` 的官方流程：先 `config init --new` 配置应用，再 `auth login --recommend` 获取用户授权，最后用 `auth status` 验证。
+
+安装 lark-cli：
+
+```bash
+npx @larksuite/cli@latest install
+```
+
+一条命令引导授权并保存群聊：
+
+```bash
+hotspot-research config lark auth --init --recommend --chat-id oc_xxxxxxxxx
+```
+
+只检查当前飞书 CLI 和授权状态：
+
+```bash
+hotspot-research config lark doctor
+```
+
+手动保存群聊配置：
 
 ```bash
 hotspot-research config lark setup --chat-id oc_xxxxxxxxx --identity bot
+```
+
+发送简报：
+
+```bash
 hotspot-research send ./briefs/example.md --topic "选题情报简报" --summary "详见附件"
 ```
 
-CLI 调用本机已安装的 `lark-cli`。如果缺失，请先按飞书官方说明安装并配置：<https://www.feishu.cn/feishu-cli>。
+如果缺失 `lark-cli`，请先按飞书官方说明安装并配置：<https://github.com/larksuite/cli>。
+
+### 飞书身份说明
+
+- `--identity bot`：以机器人身份发送。需要机器人在群里，并且飞书应用后台已开通相关 IM 权限。
+- `--identity user`：以用户身份发送。需要运行 `lark-cli auth login --recommend` 或按缺失 scope 精确授权。
+- 发送失败时，先运行 `hotspot-research config lark doctor` 查看安装和授权状态。
+
+## 交互设计参考
+
+- `larksuite/cli`：采用“安装 → config init → auth login → auth status”的三步配置路径，并把人类友好 shortcut、结构化输出和 agent 友好命令分层。
+- `xtherk/open-claude-code`：保留 Claude Code 类终端工具的配置状态、认证状态、可诊断命令和启动交互体验作为参考；本 CLI 采用更轻量的 Typer/Rich/questionary 实现。
 
 ## 扩展方向
 

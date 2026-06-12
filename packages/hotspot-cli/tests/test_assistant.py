@@ -51,6 +51,37 @@ class AssistantTests(unittest.TestCase):
             self.assertEqual(store.get_cache("agent", 30, max_age_seconds=3600), payload)
             self.assertIsNone(store.get_cache("agent", 7, max_age_seconds=3600))
 
+    def test_model_presets_include_common_cn_and_global_providers(self) -> None:
+        from hotspot_cli.model_presets import MODEL_PRESETS
+
+        for provider in ["deepseek", "openai", "anthropic", "openrouter", "siliconflow", "moonshot", "qwen", "ollama", "openai-compatible"]:
+            self.assertIn(provider, MODEL_PRESETS)
+        self.assertEqual(MODEL_PRESETS["deepseek"].model, "deepseek/deepseek-chat")
+        self.assertTrue(MODEL_PRESETS["qwen"].base_url)
+
+    def test_save_llm_env_supports_openai_compatible_base_url(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        import hotspot_cli.assistant_settings as settings_mod
+        from hotspot_cli.assistant_settings import save_llm_env
+
+        with tempfile.TemporaryDirectory() as td:
+            env_path = Path(td) / ".env"
+            with patch.object(settings_mod, "USER_ENV_PATH", env_path):
+                path = save_llm_env(
+                    provider="openai-compatible",
+                    model="openai/custom-model",
+                    api_key="test-key",
+                    base_url="https://api.example.com/v1",
+                )
+
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("HOTSPOT_LLM_PROVIDER=openai-compatible", text)
+            self.assertIn("HOTSPOT_LLM_BASE_URL=https://api.example.com/v1", text)
+            self.assertIn("OPENAI_BASE_URL=https://api.example.com/v1", text)
+            self.assertIn("OPENAI_API_KEY=test-key", text)
+
     def test_provider_passes_window_days_to_last30days_client(self) -> None:
         from hotspot_cli.assistant_sources import Last30DaysProvider
         from hotspot_cli.assistant_store import AssistantStore

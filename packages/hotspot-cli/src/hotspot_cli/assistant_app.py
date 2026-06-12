@@ -62,10 +62,26 @@ class TopicAssistantApp:
         try:
             import questionary  # type: ignore
 
-            value = questionary.text("你现在想探索哪个领域？例如：大模型智能体 / 多模态推理 / 随便推荐 / 只看 cs.AI", default="AI 通用").ask()
-            return (value or "AI 通用").strip()
+            mode = questionary.select(
+                "你现在想怎么开始？",
+                choices=[
+                    "我有明确领域，手动输入",
+                    "没有思路，帮我推荐近期高价值 AI 选题",
+                    "偏学术：优先看近期论文、评测和研究缺口",
+                    "偏产业：优先看产品、开源项目和市场信号",
+                ],
+                default="没有思路，帮我推荐近期高价值 AI 选题",
+            ).ask()
+            if mode == "我有明确领域，手动输入":
+                value = questionary.text("请输入你感兴趣的领域，例如：大模型智能体 / 多模态推理 / 中文大模型安全 / 具身智能").ask()
+                return (value or "AI 研究与产业趋势").strip()
+            if mode == "偏学术：优先看近期论文、评测和研究缺口":
+                return "近期 AI 论文、基准评测、研究缺口"
+            if mode == "偏产业：优先看产品、开源项目和市场信号":
+                return "AI 产品、开源项目、产业落地"
+            return "近期高价值 AI 选题"
         except Exception:
-            return input("你现在想探索哪个领域？").strip() or "AI 通用"
+            return input("请输入想探索的领域；没有思路可直接回车：").strip() or "近期高价值 AI 选题"
 
     def _ask_followup(self, count: int) -> str:
         prompt = f"输入 1-{count} 选择方向，或直接输入追问（如：更细分、加上中国场景、和 XXX 对比），输入 q 退出"
@@ -125,8 +141,12 @@ class TopicAssistantApp:
 
 def _normalize_field_query(field: str) -> str:
     text = field.strip()
-    if text in {"随便推荐", "AI 通用", "ai 通用", "只看 cs.AI"}:
+    if text in {"随便推荐", "AI 通用", "ai 通用", "只看 cs.AI", "近期高价值 AI 选题", "AI 研究与产业趋势"}:
         return "AI agents multimodal reasoning arxiv"
+    if text == "近期 AI 论文、基准评测、研究缺口":
+        return "AI benchmark evaluation arxiv LLM agents multimodal reasoning"
+    if text == "AI 产品、开源项目、产业落地":
+        return "AI agents open source product launch GitHub"
     return text
 
 

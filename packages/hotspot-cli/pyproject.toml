@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hotspot-research-cli"
-version = "0.2.0"
+version = "0.2.1"
 description = "Interactive topic intelligence assistant for data-backed research and writing ideas"
 readme = "README.md"
 requires-python = ">=3.9"

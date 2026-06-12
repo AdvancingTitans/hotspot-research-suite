@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1] - 2026-06-12
+
+- Add a first-run `hotspot-research setup` wizard for model and Lark/Feishu configuration.
+- Replace opaque field hints such as `AI 通用` and `只看 cs.AI` with plain-language startup choices.
+- Add `config model list/show/setup` while keeping `config llm` as a backwards-compatible alias.
+- Add model presets for DeepSeek, OpenAI, Anthropic Claude, OpenRouter, SiliconFlow, Moonshot Kimi, Qwen DashScope, Ollama, and custom OpenAI-Compatible endpoints.
+- Pass API keys and custom base URLs into LiteLLM/Instructor so OpenAI-Compatible providers work without manual environment tweaking.
+- Add `config lark auth` and `config lark doctor`, following lark-cli's recommended `config init --new`, `auth login --recommend`, and `auth status` flow.
+- Document setup flows and source-design references from `larksuite/cli` and `xtherk/open-claude-code`.
+
 ## [0.2.0] - 2026-06-12
 
 - Redesign the default CLI into an interactive topic intelligence assistant for researchers and deep writers.

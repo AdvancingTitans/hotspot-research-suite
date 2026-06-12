@@ -45,6 +45,7 @@ class InstructorTopicAnalyzer(TopicAnalyzer):
             return client.chat.completions.create(
                 model=self.settings.llm_model,
                 response_model=TopicDiscoveryResult,
+                **self.settings.litellm_kwargs(),
                 messages=[
                     {"role": "system", "content": "你是数据严谨的中文研究选题助手。只基于给定证据输出具体、低竞争、可写作的细分方向。"},
                     {"role": "user", "content": json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)},
@@ -66,6 +67,7 @@ class InstructorTopicAnalyzer(TopicAnalyzer):
             return client.chat.completions.create(
                 model=self.settings.llm_model,
                 response_model=TopicBrief,
+                **self.settings.litellm_kwargs(),
                 messages=[
                     {"role": "system", "content": "你是中文深度写作选题情报分析师。输出稳定结构，强调时效性、低竞争窗口、研究缺口和必读文献。"},
                     {"role": "user", "content": str(data)},

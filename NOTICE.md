@@ -18,6 +18,8 @@ This repository packages two related components for public-source topic intellig
 - Distribution design inputs:
   - Lark CLI IM command help for `lark-cli im +messages-send`.
   - Lark CLI Drive command help for `lark-cli drive +upload`.
+  - `larksuite/cli` quick-start and auth design: `https://github.com/larksuite/cli`
+  - `xtherk/open-claude-code` terminal agent configuration and diagnostic command patterns: `https://github.com/xtherk/open-claude-code`
   - User requirements for abstract channel interfaces and future WeChat/DingTalk expansion.
 
 ## Naming Notes
