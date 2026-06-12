@@ -71,7 +71,7 @@ class LarkChannel(DistributionChannel):
         if not chat_id:
             raise DistributionError("缺少飞书群 chat_id。请先运行 config lark。")
         if not report_path.exists():
-            raise DistributionError(f"报告文件不存在：{report_path}")
+            raise DistributionError(f"简报文件不存在：{report_path}")
         text = message_template.format(topic=topic, summary=summary, report_path=str(report_path))
         self.runner(
             [

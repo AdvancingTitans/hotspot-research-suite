@@ -152,12 +152,12 @@ class Last30DaysClient:
         self.python_bin = python_bin if python_bin.exists() else Path(sys.executable)
         self.sources = sources
 
-    def collect(self, topic: str, *, limit: int = 20) -> dict:
+    def collect(self, topic: str, *, limit: int = 20, days: int = 30) -> dict:
         if self.script_path.exists():
             argv = [str(self.python_bin), str(self.script_path)]
         else:
             argv = [str(self.python_bin), "-m", PACKAGE_LAST30_MODULE]
-        argv.extend([topic, "--emit", "json", "--limit", str(limit), "--sources", self.sources])
+        argv.extend([topic, "--emit", "json", "--limit", str(limit), "--days", str(days), "--sources", self.sources])
         try:
             proc = subprocess.run(argv, check=False, capture_output=True, text=True, timeout=45)
         except subprocess.TimeoutExpired as exc:

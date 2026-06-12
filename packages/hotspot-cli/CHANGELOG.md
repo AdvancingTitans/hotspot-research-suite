@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0] - 2026-06-12
+
+- Redesign the default CLI into an interactive topic intelligence assistant for researchers and deep writers.
+- Make `hotspot-research run` discover 5-8 evidence-backed emerging directions and generate a structured Chinese 《选题情报简报》.
+- Add `hotspot-research brief` for validating and strengthening an existing topic idea.
+- Add Pydantic v2 models for evidence, topic directions, trend metrics, research questions, readings, and final briefs.
+- Add SQLite caching keyed by query and time window, with `--refresh` to bypass cache.
+- Add `questionary`, `pydantic-settings`, `python-dotenv`, `litellm`, and `instructor` integration, with a local fallback analyzer when no LLM key is configured.
+- Add `config llm setup` for OpenAI, Anthropic, and local Ollama configuration.
+- Pass real `--days` windows into the bundled `last30days-safe` collector for 7-day and 30-day signal checks.
+- Remove the previous long-form report workflow and bundled `hotspot-research` skill; the CLI now focuses only on topic intelligence briefs.
+
 ## [0.1.3] - 2026-06-12
 
 - Bundle the standalone `hotspot-research` skill inside the Python wheel and install it automatically on first run or `doctor`.

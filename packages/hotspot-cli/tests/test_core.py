@@ -5,29 +5,6 @@ from pathlib import Path
 from hotspot_cli.config import ConfigManager
 from hotspot_cli.distribution import LarkChannel
 from hotspot_cli.hotspots import HotspotCandidate, HotspotFilter, HotspotService
-from hotspot_cli.report import ReportGenerator, SourceEvidence
-from hotspot_cli.skill import ensure_hotspot_skill_installed
-
-
-class StaticResearcher:
-    def collect(self, urls: list[str]) -> list[SourceEvidence]:
-        return [
-            SourceEvidence(
-                url=urls[0] if urls else "https://example.com/source",
-                kind="github",
-                title="google/adk-python",
-                publisher="GitHub API",
-                published="2025-04-01T00:00:00Z",
-                facts=[
-                    "stars=20,076",
-                    "forks=3,551",
-                    "open_issues=885",
-                    "updated_at=2026-06-12T00:02:03Z",
-                    "license=Apache-2.0",
-                ],
-                excerpt="An agent development kit for building, evaluating, and deploying agents.",
-            )
-        ]
 
 
 class CoreTests(unittest.TestCase):
@@ -35,12 +12,12 @@ class CoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             manager = ConfigManager(Path(td) / "config.json")
 
-            manager.update_lark(chat_id="oc_123", identity="bot", message_template="报告：{topic}")
+            manager.update_lark(chat_id="oc_123", identity="bot", message_template="简报：{topic}")
 
             loaded = manager.load()
             self.assertEqual(loaded.lark.chat_id, "oc_123")
             self.assertEqual(loaded.lark.identity, "bot")
-            self.assertEqual(loaded.lark.message_template, "报告：{topic}")
+            self.assertEqual(loaded.lark.message_template, "简报：{topic}")
 
             manager.reset()
             self.assertEqual(manager.load().lark.chat_id, "")
@@ -82,74 +59,10 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(first[0].title, "A")
         self.assertEqual(second[0].title, "B")
 
-    def test_report_generator_writes_markdown_and_html(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            tmp_path = Path(td)
-            generator = ReportGenerator(output_dir=tmp_path, skill_dir=tmp_path, source_researcher=StaticResearcher())
-            candidate = HotspotCandidate(
-                title="个人手机智能体",
-                domain="AI手机",
-                score=88,
-                sources=["github", "hn"],
-                evidence="GitHub repositories and HN discussion in last 30 days",
-                source_urls=["https://github.com/example/repo", "https://news.ycombinator.com/item?id=1"],
-            )
-
-            result = generator.generate(candidate, language="zh")
-
-            self.assertTrue(result.markdown_path.exists())
-            self.assertTrue(result.html_path.exists())
-            self.assertTrue(result.markdown_path.is_absolute())
-            self.assertIn("个人手机智能体", result.markdown_path.read_text(encoding="utf-8"))
-
-    def test_report_generator_writes_deep_research_report_not_summary_stub(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            tmp_path = Path(td)
-            generator = ReportGenerator(output_dir=tmp_path, skill_dir=tmp_path, source_researcher=StaticResearcher())
-            candidate = HotspotCandidate(
-                title="Agent Development Kits 进入可度量竞争阶段",
-                domain="开源 AI",
-                score=564,
-                sources=["github", "arxiv", "hn"],
-                evidence=(
-                    "GitHub stars=20076; forks=3551; issues=885; updated=2026-06-12; "
-                    "arXiv submitted=2026-06-04; Hacker News comments=42"
-                ),
-                source_urls=[
-                    "https://github.com/google/adk-python",
-                    "https://arxiv.org/abs/2606.05548",
-                    "https://news.ycombinator.com/item?id=1",
-                ],
-            )
-
-            result = generator.generate(candidate, language="zh")
-            markdown = result.markdown_path.read_text(encoding="utf-8")
-
-            self.assertGreater(len(markdown), 9000)
-            self.assertIn("专题深挖一", markdown)
-            self.assertIn("未来 30-90 天观察指标", markdown)
-            self.assertIn("附录：未确认与后续验证", markdown)
-            self.assertIn("二次取证后的来源画像", markdown)
-            self.assertIn("stars=20,076", markdown)
-            self.assertIn("内嵌 hotspot-research skill", markdown)
-            self.assertNotIn("本节应", markdown)
-            self.assertNotIn("should be expanded", markdown)
-
-    def test_embedded_hotspot_skill_installs_to_target_directory(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            target = Path(td) / "hotspot-research"
-
-            installed = ensure_hotspot_skill_installed(target)
-
-            self.assertEqual(installed, target)
-            self.assertTrue((target / "SKILL.md").exists())
-            self.assertTrue((target / "assets" / "report-template.md").exists())
-            self.assertTrue((target / "references" / "market-research-frameworks.md").exists())
-
     def test_lark_channel_builds_message_and_file_commands(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            report = Path(td) / "report.md"
-            report.write_text("hello", encoding="utf-8")
+            brief = Path(td) / "brief.md"
+            brief.write_text("hello", encoding="utf-8")
             calls: list[list[str]] = []
             channel = LarkChannel(runner=lambda argv, cwd=None: calls.append(argv + ([f"cwd={cwd}"] if cwd else [])) or "ok")
 
@@ -157,7 +70,7 @@ class CoreTests(unittest.TestCase):
                 chat_id="oc_abc",
                 topic="个人手机智能体",
                 summary="这是简介",
-                report_path=report,
+                report_path=brief,
                 identity="bot",
                 message_template="选题：{topic}\n简介：{summary}",
             )
@@ -167,7 +80,7 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(any("选题：个人手机智能体" in arg for arg in calls[0]))
             self.assertEqual(calls[1][:3], ["lark-cli", "im", "+messages-send"])
             self.assertIn("--file", calls[1])
-            self.assertIn("report.md", calls[1])
+            self.assertIn("brief.md", calls[1])
 
 
 if __name__ == "__main__":

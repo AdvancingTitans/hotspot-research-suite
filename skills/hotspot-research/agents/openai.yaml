@@ -1,4 +1,0 @@
-interface:
-  display_name: "Hotspot Research"
-  short_description: "Tool-grounded hotspot discovery and research reports"
-  default_prompt: "Discover the hottest topic from the last 30 days and produce a sourced research report."

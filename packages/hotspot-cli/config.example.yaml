@@ -4,5 +4,5 @@ lark:
   message_template: |-
     选题：{topic}
     简介：{summary}
-    本地报告：{report_path}
+    本地简报：{report_path}
   upload_folder_token: ""

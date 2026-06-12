@@ -1,6 +1,6 @@
 # Notice And Source Attribution
 
-This repository packages three related components for public-source hotspot research and report delivery.
+This repository packages two related components for public-source topic intelligence and brief delivery.
 
 ## Included Components
 
@@ -11,24 +11,10 @@ This repository packages three related components for public-source hotspot rese
 - Purpose: safe public-source last-30-days pulse checks across public endpoints such as Hacker News, GitHub, Reddit, and Polymarket.
 - Local changes for this repository: packaging only; no behavioral changes were made to the copied upstream skill.
 
-### `skills/hotspot-research`
-
-- Origin: created locally in `/Users/yjw/agent/hotspot-research`.
-- Purpose: tool-grounded hotspot discovery, topic scoring, multi-source research, and structured report generation.
-- Design inputs:
-  - Hermes `last30days-safe` workflow for safe public-source collection.
-  - Local research-report workflow requirements supplied by the user.
-  - Kami-style document delivery requirements for Markdown/HTML/PDF outputs.
-- WeasyPrint macOS fix references:
-  - Kozea/WeasyPrint issue #2694: `https://github.com/Kozea/WeasyPrint/issues/2694`
-  - tw93/Kami issue #15: `https://github.com/tw93/Kami/issues/15`
-  - awslabs/generative-ai-atlas PR #43: `https://github.com/awslabs/generative-ai-atlas/pull/43`
-  - WeasyPrint documentation: `https://doc.courtbouillon.org/weasyprint/stable/first_steps.html`
-
 ### `packages/hotspot-cli`
 
 - Origin: created locally in `/Users/yjw/agent/hotspot-cli`.
-- Purpose: cross-platform Python CLI that guides users through research-domain selection, last-30-days hotspot selection, report generation, local save, and Lark/Feishu distribution.
+- Purpose: cross-platform Python CLI that guides users through data-backed topic discovery, trend checks, structured Markdown brief generation, local save, and Lark/Feishu distribution.
 - Distribution design inputs:
   - Lark CLI IM command help for `lark-cli im +messages-send`.
   - Lark CLI Drive command help for `lark-cli drive +upload`.
@@ -36,11 +22,10 @@ This repository packages three related components for public-source hotspot rese
 
 ## Naming Notes
 
-The user request used `hotpot-research` / `hotpot-cli` in one place. The implemented project names are `hotspot-research` and `hotspot-cli`.
+The user request used `hotpot-research` / `hotpot-cli` in one place. The implemented package name is `hotspot-research-cli`.
 
 ## Safety Notes
 
-- Do not commit local credentials, `.env` files, Lark secrets, or generated report outputs.
+- Do not commit local credentials, `.env` files, Lark secrets, or generated brief outputs.
 - `last30days-safe` intentionally avoids cookies, Keychain, environment credential discovery, and private account data.
 - CLI tests use fake runners and do not call live Lark or external APIs.
-

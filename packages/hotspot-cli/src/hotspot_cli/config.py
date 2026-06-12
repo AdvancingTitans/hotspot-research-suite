@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-DEFAULT_TEMPLATE = "选题：{topic}\n简介：{summary}\n本地报告：{report_path}"
+DEFAULT_TEMPLATE = "选题：{topic}\n简介：{summary}\n本地简报：{report_path}"
 
 
 @dataclass
