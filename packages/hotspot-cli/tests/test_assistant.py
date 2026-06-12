@@ -51,6 +51,23 @@ class AssistantTests(unittest.TestCase):
             self.assertEqual(store.get_cache("agent", 30, max_age_seconds=3600), payload)
             self.assertIsNone(store.get_cache("agent", 7, max_age_seconds=3600))
 
+    def test_sqlite_profile_memory_round_trip_and_clear(self) -> None:
+        from hotspot_cli.assistant_store import AssistantStore
+        from hotspot_cli.conversation_models import ResearchProfile
+
+        with tempfile.TemporaryDirectory() as td:
+            store = AssistantStore(Path(td) / "assistant.sqlite")
+            profile = ResearchProfile(broad_interest="AI+人文社科", selected_focus="LLM 社科研究", goal="写深度文章")
+
+            store.set_profile(profile.model_dump(mode="json"))
+            loaded = store.get_profile()
+
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded["selected_focus"], "LLM 社科研究")
+
+            store.clear_profile()
+            self.assertIsNone(store.get_profile())
+
     def test_sqlite_cache_write_failure_does_not_break_flow(self) -> None:
         import sqlite3
 
@@ -439,6 +456,34 @@ class AssistantTests(unittest.TestCase):
 
         self.assertEqual(topics[0].name, direction.name)
         self.assertGreaterEqual(topics[0].total_score, 50)
+
+    def test_profile_questions_are_conversational_and_do_not_repeat_topics(self) -> None:
+        from hotspot_cli.conversation_app import _fallback_profile_question, _looks_like_form_question, _next_profile_topic, _question_matches_topic
+        from hotspot_cli.conversation_models import ResearchProfile
+
+        profile = ResearchProfile()
+        first = _next_profile_topic(profile, [], allow_revisit=False)
+        second = _next_profile_topic(profile, [first], allow_revisit=False)
+        questions = [_fallback_profile_question(topic, idx) for idx, topic in enumerate(["background", "goal", "advantage", "concern"])]
+
+        self.assertEqual(first, "background")
+        self.assertEqual(second, "goal")
+        for question in questions:
+            self.assertFalse(_looks_like_form_question(question))
+            self.assertNotIn("风险偏好", question)
+            self.assertNotIn("输出偏好", question)
+        self.assertTrue(_question_matches_topic("background", questions[0]))
+        self.assertTrue(_question_matches_topic("goal", questions[1]))
+        self.assertTrue(_question_matches_topic("advantage", questions[2]))
+        self.assertTrue(_question_matches_topic("concern", questions[3]))
+        self.assertFalse(_question_matches_topic("background", "你对这个方向具体想探究些什么呢？"))
+
+    def test_non_informative_profile_answers_can_be_skipped(self) -> None:
+        from hotspot_cli.conversation_app import _is_non_informative_answer
+
+        for answer in ["没有", "无", "不知道", "还没想好", "n/a"]:
+            self.assertTrue(_is_non_informative_answer(answer))
+        self.assertFalse(_is_non_informative_answer("我做过AI产品和行业研究"))
 
 
 if __name__ == "__main__":

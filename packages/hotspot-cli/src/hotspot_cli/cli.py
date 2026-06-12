@@ -30,10 +30,12 @@ config_app = typer.Typer(help="配置管理")
 lark_app = typer.Typer(help="飞书配置")
 llm_app = typer.Typer(help="模型配置")
 cache_app = typer.Typer(help="缓存配置")
+profile_app = typer.Typer(help="用户选题画像")
 config_app.add_typer(lark_app, name="lark")
 config_app.add_typer(llm_app, name="llm")
 config_app.add_typer(llm_app, name="model")
 config_app.add_typer(cache_app, name="cache")
+config_app.add_typer(profile_app, name="profile")
 app.add_typer(config_app, name="config")
 console = Console()
 
@@ -49,7 +51,24 @@ def _install_entrypoint_shim() -> Path:
 
 
 def _ensure_entrypoint_hint() -> None:
-    if shutil.which("hotspot-research") is not None or os.name == "nt":
+    command_path = shutil.which("hotspot-research")
+    if os.name == "nt":
+        return
+    if command_path is not None:
+        path = Path(command_path)
+        expected = Path.home() / ".local" / "bin" / "hotspot-research"
+        if path == expected:
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                return
+            head = "\n".join(text.splitlines()[:2])
+            if sys.executable not in text and "exec " not in head:
+                try:
+                    shim = _install_entrypoint_shim()
+                except OSError:
+                    return
+                console.print(f"[yellow]已刷新旧命令入口：{shim}[/yellow]")
         return
     try:
         shim = _install_entrypoint_shim()
@@ -576,6 +595,34 @@ def cache_clear() -> None:
     except OSError as exc:
         console.print(f"[red]缓存清理失败：{exc}[/red]")
         raise typer.Exit(code=1) from exc
+
+
+@profile_app.command("show")
+def profile_show() -> None:
+    """查看本地保存的用户选题画像。"""
+    from .conversation_models import ResearchProfile
+
+    store = AssistantStore()
+    data = store.get_profile()
+    if not data:
+        console.print("[yellow]当前没有保存的选题画像。运行 `hotspot-research run` 完成一次自然对话后会自动保存。[/yellow]")
+        return
+    try:
+        profile = ResearchProfile.model_validate(data)
+    except Exception as exc:
+        console.print(f"[red]画像数据无法解析：{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print("[bold]本地选题画像[/bold]")
+    console.print(Markdown(profile.summary()))
+    console.print(f"[dim]存储位置：{store.path}[/dim]")
+
+
+@profile_app.command("clear")
+def profile_clear() -> None:
+    """清除本地保存的用户选题画像，下次 run 会重新自然对话生成。"""
+    store = AssistantStore()
+    store.clear_profile()
+    console.print("[green]已清除本地选题画像。下次运行 `hotspot-research run` 会重新生成。[/green]")
 
 
 @app.command("send")

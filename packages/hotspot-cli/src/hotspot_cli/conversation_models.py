@@ -72,6 +72,7 @@ class ConversationState(BaseModel):
     initial_directions: list[InitialDirection] = Field(default_factory=list)
     matched_topics: list["MatchedTopic"] = Field(default_factory=list)
     seen_topics: list[str] = Field(default_factory=list)
+    asked_profile_topics: list[str] = Field(default_factory=list)
     profile_rounds: int = 0
 
     def add_turn(self, role: Literal["assistant", "user"], content: str) -> None:

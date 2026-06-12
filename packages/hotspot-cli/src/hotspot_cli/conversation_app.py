@@ -56,6 +56,13 @@ class AdaptiveTopicAssistantApp:
         self._render_welcome(output_dir)
         if not self.settings.has_llm_key():
             self.console.print("[yellow]未检测到 LLM API Key，将使用本地规则完成自适应问答。运行 `hotspot-research setup` 可开启模型增强。[/yellow]")
+        if self._load_saved_profile():
+            topics = self._stage_scan(refresh=refresh)
+            if not topics:
+                self.console.print("[red]没有发现足够可靠且与你画像匹配的方向。可以说“换一个方向”，或先运行 `hotspot-research config profile clear` 重新生成画像。[/red]")
+                return
+            self._stage_match(topics, output_dir, refresh=refresh)
+            return
         focus = self._stage_interest()
         if not focus:
             return
@@ -66,6 +73,32 @@ class AdaptiveTopicAssistantApp:
             self.console.print("[red]没有发现足够可靠且与你画像匹配的方向。可以换一个更具体的兴趣，或使用 --refresh 重试。[/red]")
             return
         self._stage_match(topics, output_dir, refresh=refresh)
+
+    def _load_saved_profile(self) -> bool:
+        data = self.store.get_profile()
+        if not data:
+            return False
+        try:
+            profile = ResearchProfile.model_validate(data)
+        except Exception:
+            return False
+        if not profile.broad_interest and not profile.selected_focus:
+            return False
+        self.state.profile = profile
+        self.state.phase = "profile"
+        self.console.print(Panel(profile.summary(), title="已读取本地选题画像", border_style="green"))
+        self.console.print("[dim]如果想重新聊一遍画像，运行：hotspot-research config profile clear[/dim]")
+        raw = _ask_text("这次想沿用这个画像继续找题吗？回车沿用；也可以直接输入新的方向，或输入 clear 重新生成画像。", default="沿用")
+        if raw.lower() in {"clear", "清除", "重来", "重新生成"}:
+            self.store.clear_profile()
+            self.state = ConversationState()
+            self.console.print("[green]已清除本地画像，我们重新开始。[/green]")
+            return False
+        if raw not in {"", "沿用", "是", "好", "确认", "ok", "OK"}:
+            self.state.profile.selected_focus = raw
+            self.state.profile.broad_interest = _append_text(self.state.profile.broad_interest, raw)
+            self._save_profile()
+        return True
 
     def _render_welcome(self, output_dir: Path) -> None:
         left = "\n".join(
@@ -123,12 +156,11 @@ class AdaptiveTopicAssistantApp:
 
     def _stage_profile(self, focus: str) -> bool:
         self.state.phase = "profile"
-        self.console.print(Panel("接下来我会像研究助手一样追问几个关键问题。不会一次性填表，只补最影响选题匹配的信息。", title="构建选题画像", border_style="bright_black"))
-        while self.state.profile_rounds < 8:
-            missing = self.state.profile.missing_fields()
-            if self.state.profile_rounds >= 4 and not missing:
+        self.console.print(Panel("我想先多了解你一点，这样后面不是单纯追热点，而是帮你找真正适合你写、也写得出彩的题。", title="先聊聊你", border_style="bright_black"))
+        while self.state.profile_rounds < 6:
+            topic, question = self._next_profile_prompt()
+            if not topic:
                 break
-            question = self._next_profile_question(missing)
             answer = _ask_text(question)
             if _is_quit(answer):
                 return False
@@ -137,7 +169,9 @@ class AdaptiveTopicAssistantApp:
                 self.state.profile.selected_focus = intent.rewritten_focus or focus
                 break
             self.state.add_turn("user", answer)
-            self.state.profile = self._update_profile(self.state.profile, question, answer)
+            self._mark_profile_topic(topic)
+            if not _is_non_informative_answer(answer):
+                self.state.profile = self._update_profile(self.state.profile, topic, question, answer)
             self.state.profile_rounds += 1
             if intent.intent == "easier":
                 self.state.profile.risk_preference = "偏稳健，希望难度适中、资料相对充分"
@@ -153,6 +187,7 @@ class AdaptiveTopicAssistantApp:
         if confirm not in {"", "确认", "是", "对", "准确", "ok", "OK"}:
             self.state.profile.constraints = _append_text(self.state.profile.constraints, confirm)
             self._render_profile_summary()
+        self._save_profile()
         return True
 
     def _stage_scan(self, *, refresh: bool) -> list[MatchedTopic]:
@@ -218,17 +253,26 @@ class AdaptiveTopicAssistantApp:
 
     def _ask_additional_profile_questions(self, *, count: int = 2) -> None:
         self.state.phase = "profile"
-        self.console.print(Panel("好，我再补几问，把选题匹配调得更贴近你。", title="补充画像", border_style="bright_black"))
+        self.console.print(Panel("好，我再多了解一点点，把后面的推荐调得更贴近你。", title="再聊两句", border_style="bright_black"))
         for _ in range(count):
-            question = self._next_profile_question(self.state.profile.missing_fields())
+            topic, question = self._next_profile_prompt(allow_revisit=True)
+            if not topic:
+                return
             answer = _ask_text(question)
             if _is_quit(answer):
                 return
             self.state.add_turn("user", answer)
-            self.state.profile = self._update_profile(self.state.profile, question, answer)
+            self._mark_profile_topic(topic)
+            if not _is_non_informative_answer(answer):
+                self.state.profile = self._update_profile(self.state.profile, topic, question, answer)
             self.state.profile_rounds += 1
         self.state.profile.confidence = _profile_confidence(self.state.profile)
         self._render_profile_summary()
+        self._save_profile()
+
+    def _save_profile(self) -> None:
+        self.state.profile.confidence = _profile_confidence(self.state.profile)
+        self.store.set_profile(self.state.profile.model_dump(mode="json"))
 
     def _initial_directions(self, raw: str) -> list[InitialDirection]:
         fallback = _fallback_initial_directions(raw)
@@ -248,26 +292,45 @@ class AdaptiveTopicAssistantApp:
                 continue
         return (directions or fallback)[:5]
 
-    def _next_profile_question(self, missing: list[str]) -> str:
-        fallback = _fallback_profile_question(missing, self.state.profile_rounds)
+    def _next_profile_prompt(self, *, allow_revisit: bool = False) -> tuple[str, str]:
+        topic = _next_profile_topic(self.state.profile, self.state.asked_profile_topics, allow_revisit=allow_revisit)
+        if not topic:
+            return "", ""
+        fallback = _fallback_profile_question(topic, self.state.profile_rounds)
         data = self._llm_json(
             {
-                "task": "为中文选题助手生成下一句自然追问。只问一个问题，不要列清单。",
+                "task": "为中文选题助手生成下一句自然追问。像聊天一样，只问一个问题，不要列清单，不要像科研申请表。",
+                "conversation_goal": "自然了解用户，而不是审问用户。用户可以回答没有、不知道、还没想好。",
                 "profile": self.state.profile.model_dump(),
-                "missing_fields": missing,
+                "topic_to_ask": topic,
+                "already_asked_topics": self.state.asked_profile_topics,
+                "recent_turns": [turn.model_dump(mode="json") for turn in self.state.turns[-6:]],
                 "round": self.state.profile_rounds + 1,
-                "rules": ["优先补最影响选题匹配的信息", "语气自然", "不要一次问多个问题"],
+                "rules": [
+                    "语气自然、有温度，像一个懂写作的研究伙伴",
+                    "不要出现：画像、风险偏好、输出偏好、资源约束、学术/写作背景、核心目标 等字段化表达",
+                    "不要重复问已经问过的主题，也不要换一种说法重复追问",
+                    "如果 topic_to_ask 是 goal，要问真实想达成什么结果，这是最关键的问题",
+                    "如果 topic_to_ask 是 concern，要允许用户说没有顾虑",
+                ],
                 "schema": {"question": "一句中文问题"},
             }
         )
         question = str(data.get("question", "")).strip() if isinstance(data, dict) else ""
-        return question or fallback
+        if not question or _looks_like_form_question(question) or not _question_matches_topic(topic, question):
+            question = fallback
+        return topic, question
 
-    def _update_profile(self, profile: ResearchProfile, question: str, answer: str) -> ResearchProfile:
+    def _mark_profile_topic(self, topic: str) -> None:
+        if topic not in self.state.asked_profile_topics:
+            self.state.asked_profile_topics.append(topic)
+
+    def _update_profile(self, profile: ResearchProfile, topic: str, question: str, answer: str) -> ResearchProfile:
         data = self._llm_json(
             {
-                "task": "根据问答更新用户选题画像。未提及字段保留原值。",
+                "task": "根据自然对话更新内部用户画像。未提及字段保留原值。用户说没有、不知道、还没想好时，不要编造。",
                 "current_profile": profile.model_dump(),
+                "topic": topic,
                 "question": question,
                 "answer": answer,
                 "schema": ResearchProfile.model_json_schema(),
@@ -282,7 +345,7 @@ class AdaptiveTopicAssistantApp:
                 return ResearchProfile.model_validate(merged)
             except Exception:
                 pass
-        return _heuristic_update_profile(profile, question, answer)
+        return _heuristic_update_profile(profile, topic, question, answer)
 
     def _recognize_intent(self, raw: str) -> IntentResult:
         text = raw.strip()
@@ -529,43 +592,90 @@ def _fallback_initial_directions(raw: str) -> list[InitialDirection]:
     ]
 
 
-def _fallback_profile_question(missing: list[str], round_no: int) -> str:
+PROFILE_TOPIC_ORDER = ["background", "goal", "advantage", "concern"]
+
+
+def _next_profile_topic(profile: ResearchProfile, asked_topics: list[str], *, allow_revisit: bool = False) -> str:
+    if allow_revisit:
+        for topic in ["advantage", "concern", "goal", "background"]:
+            if topic not in asked_topics:
+                return topic
+        return "concern"
+    for topic in PROFILE_TOPIC_ORDER:
+        if topic not in asked_topics:
+            return topic
+    return ""
+
+
+def _fallback_profile_question(topic: str, round_no: int) -> str:
     questions = {
-        "background": "你在这个方向上已有的背景或积累是什么？比如学术训练、行业经验、写作经验、技术栈。",
-        "goal": "你做这个选题的核心目标是什么？发论文、写深度文章、职业发展，还是构建个人知识体系？",
-        "time_budget": "你希望投入多长时间完成第一版成果？一周、一个月，还是更长期？",
-        "unique_advantages": "你有什么别人不太容易复制的优势？比如跨学科背景、语言文化视角、数据来源、人脉或实践场景。",
-        "risk_preference": "你更愿意做高风险高回报的新方向，还是相对稳健、资料更充分的方向？",
-        "output_preference": "你最终更想产出什么形式？学术论文、深度长文、研究报告、系列文章，还是内部分享？",
+        "background": "先聊聊你自己吧，你之前主要在哪些方向做过研究、写作或者项目？随便说个大概就行。",
+        "goal": "这次如果真花时间做这个选题，你最希望它帮你达成什么？比如写一篇有人看的文章、系统学一个领域、为工作做准备，或者只是满足好奇。",
+        "advantage": "你有没有一些别人不太容易复制的视角或资源？比如行业经历、城市/语言优势、能接触到的人或数据，哪怕很小也算。",
+        "concern": "有没有什么你现在不太想碰的方向，或者一想到就觉得麻烦、没把握的地方？没有也可以直接说没有。",
     }
-    if missing:
-        return questions.get(missing[0], "还有什么重要约束或偏好吗？")
-    fallback = ["有没有必须避开的方向？", "有没有你特别想结合的地区、语言或行业场景？", "你希望这个选题更偏理论、实证，还是产品/产业分析？"]
-    return fallback[round_no % len(fallback)]
+    return questions.get(topic, questions[PROFILE_TOPIC_ORDER[round_no % len(PROFILE_TOPIC_ORDER)]])
 
 
-def _heuristic_update_profile(profile: ResearchProfile, question: str, answer: str) -> ResearchProfile:
+def _heuristic_update_profile(profile: ResearchProfile, topic: str, question: str, answer: str) -> ResearchProfile:
     data = profile.model_copy(deep=True)
-    q = question
-    if "背景" in q or "积累" in q:
+    if topic == "background":
         data.background = _append_text(data.background, answer)
-    elif "目标" in q:
+    elif topic == "goal":
         data.goal = _append_text(data.goal, answer)
-    elif "多长时间" in q or "时间" in q:
-        data.time_budget = _append_text(data.time_budget, answer)
-    elif "优势" in q:
+        if any(word in answer for word in ["论文", "paper", "投稿", "发表"]):
+            data.output_preference = _append_text(data.output_preference, "学术论文")
+        if any(word in answer for word in ["长文", "公众号", "文章", "爆款", "很多人看", "阅读"]):
+            data.output_preference = _append_text(data.output_preference, "深度长文")
+        if any(word in answer for word in ["职业", "工作", "跳槽", "转型"]):
+            data.goal = _append_text(data.goal, "职业发展")
+    elif topic == "advantage":
         data.unique_advantages = _append_text(data.unique_advantages, answer)
-    elif "风险" in q:
-        data.risk_preference = _append_text(data.risk_preference, answer)
-    elif "形式" in q or "产出" in q:
-        data.output_preference = _append_text(data.output_preference, answer)
+        if any(word in answer for word in ["数据", "访谈", "人脉", "客户", "用户", "行业"]):
+            data.resources = _append_text(data.resources, answer)
+    elif topic == "concern":
+        data.constraints = _append_text(data.constraints, answer)
+        if any(word in answer for word in ["简单", "别太难", "太难", "时间少", "稳"]):
+            data.risk_preference = _append_text(data.risk_preference, "偏稳健，希望难度适中")
     else:
         data.constraints = _append_text(data.constraints, answer)
-    if any(word in answer for word in ["论文", "paper", "投稿"]):
-        data.goal = _append_text(data.goal, "发论文/学术产出")
-    if any(word in answer for word in ["长文", "公众号", "文章", "写作"]):
-        data.output_preference = _append_text(data.output_preference, "深度长文")
+    if any(word in answer for word in ["一周", "两周", "一个月", "周末", "今晚", "短期"]):
+        data.time_budget = _append_text(data.time_budget, answer)
     return data
+
+
+def _is_non_informative_answer(answer: str) -> bool:
+    text = re.sub(r"\s+", "", answer.strip().lower())
+    return text in {"", "无", "没有", "没", "不知道", "还没想好", "不清楚", "随便", "都行", "none", "no", "na", "n/a"}
+
+
+def _looks_like_form_question(question: str) -> bool:
+    banned = [
+        "画像",
+        "风险偏好",
+        "输出偏好",
+        "资源约束",
+        "时间与资源约束",
+        "学术/写作背景",
+        "核心目标",
+        "独特个人优势",
+        "请描述",
+        "请说明",
+        "以下维度",
+    ]
+    if any(word in question for word in banned):
+        return True
+    return question.count("？") + question.count("?") > 1
+
+
+def _question_matches_topic(topic: str, question: str) -> bool:
+    keywords = {
+        "background": ["背景", "之前", "做过", "研究", "写作", "项目", "经历", "积累"],
+        "goal": ["达成", "希望", "想通过", "结果", "目标", "发论文", "文章", "系统学", "职业", "好奇"],
+        "advantage": ["优势", "资源", "视角", "经历", "数据", "人", "接触", "行业", "城市", "语言"],
+        "concern": ["不想", "顾虑", "担心", "没把握", "麻烦", "避开", "没有"],
+    }
+    return any(word in question for word in keywords.get(topic, []))
 
 
 def _profile_confidence(profile: ResearchProfile) -> float:

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.6] - 2026-06-13
+
+- Persist the user's topic profile locally in SQLite so repeated `hotspot-research run` sessions can reuse it without asking the same questions again.
+- Add `hotspot-research config profile show` and `hotspot-research config profile clear` for inspecting and resetting the saved profile.
+- Make stage 2 profile building feel more conversational: ask background, real goal, unique advantages/resources, and concerns with warm natural prompts.
+- Treat answers such as “没有”“不知道”“还没想好” as valid skips and avoid repeating equivalent profile questions.
+- Reject LLM-generated profile questions that sound like a form or do not match the current conversational topic, falling back to curated natural prompts.
+
 ## [0.2.5] - 2026-06-13
 
 - Replace the default `run` flow with a 4-stage adaptive topic interview: interest exploration, user profile building, data-backed opportunity scan, and personalized matching/brief generation.

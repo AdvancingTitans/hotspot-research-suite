@@ -44,6 +44,15 @@ class AssistantStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                create table if not exists user_profile (
+                    id integer primary key check (id = 1),
+                    updated_at real not null,
+                    payload text not null
+                )
+                """
+            )
 
     def get_cache(self, query: str, window_days: int, *, max_age_seconds: int) -> Optional[dict[str, Any]]:
         if not self.available:
@@ -93,5 +102,47 @@ class AssistantStore:
                     "insert into history(created_at, kind, title, payload) values (?, ?, ?, ?)",
                     (time.time(), kind, title, json.dumps(payload, ensure_ascii=False)),
                 )
+        except sqlite3.Error:
+            self.available = False
+
+    def get_profile(self) -> Optional[dict[str, Any]]:
+        if not self.available:
+            return None
+        try:
+            with self._connect() as conn:
+                row = conn.execute("select payload from user_profile where id=1").fetchone()
+        except sqlite3.Error:
+            return None
+        if not row:
+            return None
+        try:
+            data = json.loads(str(row[0]))
+        except json.JSONDecodeError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def set_profile(self, payload: dict[str, Any]) -> None:
+        if not self.available:
+            return
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    insert into user_profile(id, updated_at, payload)
+                    values (1, ?, ?)
+                    on conflict(id)
+                    do update set updated_at=excluded.updated_at, payload=excluded.payload
+                    """,
+                    (time.time(), json.dumps(payload, ensure_ascii=False)),
+                )
+        except sqlite3.Error:
+            self.available = False
+
+    def clear_profile(self) -> None:
+        if not self.available:
+            return
+        try:
+            with self._connect() as conn:
+                conn.execute("delete from user_profile where id=1")
         except sqlite3.Error:
             self.available = False
