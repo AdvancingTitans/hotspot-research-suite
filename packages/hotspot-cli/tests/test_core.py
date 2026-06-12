@@ -80,6 +80,36 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.markdown_path.is_absolute())
             self.assertIn("个人手机智能体", result.markdown_path.read_text(encoding="utf-8"))
 
+    def test_report_generator_writes_deep_research_report_not_summary_stub(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            generator = ReportGenerator(output_dir=tmp_path, skill_dir=tmp_path)
+            candidate = HotspotCandidate(
+                title="Agent Development Kits 进入可度量竞争阶段",
+                domain="开源 AI",
+                score=564,
+                sources=["github", "arxiv", "hn"],
+                evidence=(
+                    "GitHub stars=20076; forks=3551; issues=885; updated=2026-06-12; "
+                    "arXiv submitted=2026-06-04; Hacker News comments=42"
+                ),
+                source_urls=[
+                    "https://github.com/google/adk-python",
+                    "https://arxiv.org/abs/2606.05548",
+                    "https://news.ycombinator.com/item?id=1",
+                ],
+            )
+
+            result = generator.generate(candidate, language="zh")
+            markdown = result.markdown_path.read_text(encoding="utf-8")
+
+            self.assertGreater(len(markdown), 9000)
+            self.assertIn("专题深挖一", markdown)
+            self.assertIn("未来 30-90 天观察指标", markdown)
+            self.assertIn("附录：未确认与后续验证", markdown)
+            self.assertNotIn("本节应", markdown)
+            self.assertNotIn("should be expanded", markdown)
+
     def test_lark_channel_builds_message_and_file_commands(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             report = Path(td) / "report.md"

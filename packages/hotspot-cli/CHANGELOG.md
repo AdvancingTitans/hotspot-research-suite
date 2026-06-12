@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Replace the short report stub with a deep research-report draft modeled on the daily automation output.
+- Add full sections for selection rationale, longitudinal analysis, competitive map, integrated insights, deep dives, future watchlist, action recommendations, sources, and unverified-items appendix.
+- Keep the expanded report grounded in candidate evidence and URLs instead of inventing market-size, funding, or revenue numbers.
+
 ## [0.1.2] - 2026-06-12
 
 - Broaden hotspot discovery across GitHub, Hacker News, arXiv, and Reddit public signals.

@@ -8,6 +8,8 @@ This repository contains:
 - `skills/hotspot-research`: a tool-grounded hotspot research skill for topic discovery, scoring, multi-source verification, and report generation.
 - `packages/hotspot-cli`: a Python CLI that guides users through domain selection, hotspot selection, report generation, local saving, and Lark/Feishu distribution.
 
+The CLI now writes a deep research-report draft by default, not a short summary. Generated Markdown includes selection rationale, longitudinal analysis, cross-sectional competitive mapping, integrated insights, deep-dive sections, a 30-90 day watchlist, action recommendations, sources, and an unverified-items appendix.
+
 ## Quick Start
 
 Install the CLI from PyPI. Python 3.9+ is supported:
