@@ -5,24 +5,46 @@ from typing import Optional
 
 from .assistant_models import TrendMetrics
 from .assistant_store import AssistantStore
-from .hotspots import HotspotCandidate, Last30DaysClient
+from .hotspots import HotspotCandidate, Last30DaysClient, PublicSignalClient
 
 
 class Last30DaysProvider:
-    def __init__(self, store: Optional[AssistantStore] = None, client: Optional[Last30DaysClient] = None, cache_ttl_seconds: int = 6 * 3600) -> None:
+    def __init__(
+        self,
+        store: Optional[AssistantStore] = None,
+        client: Optional[Last30DaysClient] = None,
+        signal_client: Optional[PublicSignalClient] = None,
+        cache_ttl_seconds: int = 6 * 3600,
+    ) -> None:
         self.store = store or AssistantStore()
         self.client = client or Last30DaysClient(sources="hn,github,reddit")
+        self.signal_client = signal_client or PublicSignalClient()
         self.cache_ttl_seconds = cache_ttl_seconds
 
     def search(self, query: str, *, window_days: int = 30, limit: int = 20, refresh: bool = False) -> list[HotspotCandidate]:
         cached = None if refresh else self.store.get_cache(query, window_days, max_age_seconds=self.cache_ttl_seconds)
         if cached is not None:
             return [_candidate_from_dict(item) for item in cached.get("items", [])]
+        candidates = self._collect_query(query, window_days=window_days, limit=limit)
+        self.store.set_cache(query, window_days, {"items": [_candidate_to_dict(item) for item in candidates], "fetched_at": time.time()})
+        return candidates
+
+    def search_many(self, queries: list[str], *, window_days: int = 30, limit: int = 36, refresh: bool = False) -> list[HotspotCandidate]:
+        merged: list[HotspotCandidate] = []
+        per_query_limit = max(8, limit // max(1, len(queries)))
+        for query in queries:
+            merged.extend(self.search(query, window_days=window_days, limit=per_query_limit, refresh=refresh))
+            time.sleep(0.08)
+        return _dedupe(merged)[:limit]
+
+    def _collect_query(self, query: str, *, window_days: int, limit: int) -> list[HotspotCandidate]:
         payload = self.client.collect(query, limit=limit, days=window_days)
         rows = payload.get("items", []) if isinstance(payload, dict) else []
         candidates = [_candidate_from_last30_row(row, query) for row in rows]
-        self.store.set_cache(query, window_days, {"items": [_candidate_to_dict(item) for item in candidates], "fetched_at": time.time()})
-        return candidates
+        if candidates:
+            return sorted(candidates, key=lambda item: item.score, reverse=True)[:limit]
+        fallback = self.signal_client.collect(query, query, limit=limit)
+        return sorted(fallback, key=lambda item: item.score, reverse=True)[:limit]
 
     def trend(self, query: str, *, refresh: bool = False) -> TrendMetrics:
         recent_7 = self.search(query, window_days=7, limit=30, refresh=refresh)
@@ -95,3 +117,15 @@ def _candidate_from_dict(data: dict) -> HotspotCandidate:
 
 def _heat(items: list[HotspotCandidate]) -> int:
     return int(sum(max(1.0, min(item.score, 1000.0) / 20.0) for item in items))
+
+
+def _dedupe(items: list[HotspotCandidate]) -> list[HotspotCandidate]:
+    seen: set[str] = set()
+    out: list[HotspotCandidate] = []
+    for item in sorted(items, key=lambda candidate: candidate.score, reverse=True):
+        key = (item.source_urls[0] if item.source_urls else item.title).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out

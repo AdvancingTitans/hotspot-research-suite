@@ -66,6 +66,14 @@ MODEL_PRESETS: dict[str, ModelPreset] = {
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         note="OpenAI-Compatible 接口，适合中文场景。",
     ),
+    "ark": ModelPreset(
+        provider="ark",
+        label="火山方舟 Ark",
+        model="openai/doubao-1-5-lite-32k-250115",
+        api_key_name="ARK_API_KEY",
+        base_url="https://ark.cn-beijing.volces.com/api/v3",
+        note="火山方舟 OpenAI-Compatible 接口；Base URL 使用 /api/v3，不是 /api/coding。",
+    ),
     "ollama": ModelPreset(
         provider="ollama",
         label="Ollama 本地模型",

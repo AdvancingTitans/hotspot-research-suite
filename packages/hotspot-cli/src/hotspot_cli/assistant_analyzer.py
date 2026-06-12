@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import json
+import contextlib
+import io
 from collections import defaultdict
 from typing import Optional
 
@@ -18,6 +20,7 @@ from .assistant_models import (
 )
 from .assistant_settings import AssistantSettings
 from .hotspots import HotspotCandidate
+from .model_config import OPENAI_COMPATIBLE_PROVIDERS
 
 
 class TopicAnalyzer:
@@ -36,26 +39,40 @@ class InstructorTopicAnalyzer(TopicAnalyzer):
     def discover_directions(self, payload: TopicDiscoveryInput) -> TopicDiscoveryResult:
         if not self.settings.has_llm_key():
             return self.fallback.discover_directions(payload)
+        if self.settings.llm_provider in OPENAI_COMPATIBLE_PROVIDERS:
+            result = self._discover_directions_json(payload)
+            if result is not None and result.directions:
+                return _ensure_direction_count(result, self.fallback.discover_directions(payload))
+            return self.fallback.discover_directions(payload)
         try:
             self.settings.apply_provider_env()
             import instructor  # type: ignore
             from litellm import completion  # type: ignore
 
             client = instructor.from_litellm(completion)
-            return client.chat.completions.create(
-                model=self.settings.llm_model,
-                response_model=TopicDiscoveryResult,
-                **self.settings.litellm_kwargs(),
-                messages=[
-                    {"role": "system", "content": "你是数据严谨的中文研究选题助手。只基于给定证据输出具体、低竞争、可写作的细分方向。"},
-                    {"role": "user", "content": json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)},
-                ],
-            )
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                result = client.chat.completions.create(
+                    model=self.settings.llm_model,
+                    response_model=TopicDiscoveryResult,
+                    **self.settings.litellm_kwargs(),
+                    messages=[
+                        {"role": "system", "content": "你是数据严谨的中文研究选题助手。只基于给定证据输出具体、低竞争、可写作的细分方向。"},
+                        {"role": "user", "content": json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)},
+                    ],
+                )
+            if not result.directions:
+                return self.fallback.discover_directions(payload)
+            return _ensure_direction_count(result, self.fallback.discover_directions(payload))
         except Exception:
             return self.fallback.discover_directions(payload)
 
     def create_brief(self, selection: TopicSelection, trend: Optional[TrendMetrics] = None) -> TopicBrief:
         if not self.settings.has_llm_key():
+            return self.fallback.create_brief(selection, trend)
+        if self.settings.llm_provider in OPENAI_COMPATIBLE_PROVIDERS:
+            result = self._create_brief_json(selection, trend)
+            if result is not None:
+                return result
             return self.fallback.create_brief(selection, trend)
         try:
             self.settings.apply_provider_env()
@@ -64,17 +81,96 @@ class InstructorTopicAnalyzer(TopicAnalyzer):
 
             client = instructor.from_litellm(completion)
             data = {"selection": selection.model_dump(), "trend": (trend or TrendMetrics()).model_dump()}
-            return client.chat.completions.create(
-                model=self.settings.llm_model,
-                response_model=TopicBrief,
-                **self.settings.litellm_kwargs(),
-                messages=[
-                    {"role": "system", "content": "你是中文深度写作选题情报分析师。输出稳定结构，强调时效性、低竞争窗口、研究缺口和必读文献。"},
-                    {"role": "user", "content": str(data)},
-                ],
-            )
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return client.chat.completions.create(
+                    model=self.settings.llm_model,
+                    response_model=TopicBrief,
+                    **self.settings.litellm_kwargs(),
+                    messages=[
+                        {"role": "system", "content": "你是中文深度写作选题情报分析师。输出稳定结构，强调时效性、低竞争窗口、研究缺口和必读文献。"},
+                        {"role": "user", "content": str(data)},
+                    ],
+                )
         except Exception:
             return self.fallback.create_brief(selection, trend)
+
+    def _discover_directions_json(self, payload: TopicDiscoveryInput) -> Optional[TopicDiscoveryResult]:
+        try:
+            self.settings.apply_provider_env()
+            from litellm import completion  # type: ignore
+
+            prompt = {
+                "task": "基于候选证据生成 5-8 个中文新兴高价值选题方向，只输出 JSON。",
+                "output_schema": {
+                    "field": "string",
+                    "directions": [
+                        {
+                            "name": "具体、可写作的细分选题名称",
+                            "why_now": "为什么现在热门，必须包含候选条数/评分/来源等数据证据",
+                            "competition_signal": "竞争程度信号",
+                            "research_gap": "研究缺口",
+                            "writing_angles": ["角度1", "角度2"],
+                            "representative_items": [
+                                {"title": "标题", "source": "来源", "url": "链接", "score": 0, "summary": "证据摘要"}
+                            ],
+                        }
+                    ],
+                },
+                "input": payload.model_dump(mode="json"),
+            }
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                response = completion(
+                    model=self.settings.llm_model,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": "你是数据严谨的中文研究选题助手。只输出合法 JSON，不要 Markdown。"},
+                        {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+                    ],
+                    **self.settings.litellm_kwargs(),
+                )
+            content = response.choices[0].message.content or ""
+            return TopicDiscoveryResult.model_validate_json(_extract_json(content))
+        except Exception:
+            return None
+
+    def _create_brief_json(self, selection: TopicSelection, trend: Optional[TrendMetrics] = None) -> Optional[TopicBrief]:
+        try:
+            self.settings.apply_provider_env()
+            from litellm import completion  # type: ignore
+
+            trend = trend or TrendMetrics()
+            prompt = {
+                "task": "生成中文《选题情报简报》，只输出 JSON。",
+                "output_schema": {
+                    "topic": "选题",
+                    "field": "领域",
+                    "timeliness": "为什么现在具有时效性",
+                    "current_state": "当前研究现状",
+                    "gaps": ["高潜力研究缺口"],
+                    "questions": [{"angle": "角度", "question": "研究问题", "value": "价值", "feasibility": "可行性"}],
+                    "title_suggestions": ["标题"],
+                    "readings": [{"title": "文章标题", "source": "来源", "url": "链接", "reason": "阅读理由"}],
+                    "risks": ["风险提示"],
+                    "trend": trend.model_dump(mode="json"),
+                },
+                "input": {"selection": selection.model_dump(mode="json"), "trend": trend.model_dump(mode="json")},
+            }
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                response = completion(
+                    model=self.settings.llm_model,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": "你是中文深度写作选题情报分析师。只输出合法 JSON，不要 Markdown。"},
+                        {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+                    ],
+                    **self.settings.litellm_kwargs(),
+                )
+            content = response.choices[0].message.content or ""
+            data = json.loads(_extract_json(content))
+            data["trend"] = data.get("trend") or trend.model_dump(mode="json")
+            return TopicBrief.model_validate(data)
+        except Exception:
+            return None
 
 
 class FallbackTopicAnalyzer(TopicAnalyzer):
@@ -102,16 +198,25 @@ class FallbackTopicAnalyzer(TopicAnalyzer):
                     representative_items=representative,
                 )
             )
-        if not directions and payload.candidates:
+        if not directions:
             top = payload.candidates[:3]
+            representative = [_evidence(item) for item in top] if top else [
+                EvidenceItem(
+                    title=f"{payload.field} 的近期公开信号不足，需要扩大关键词",
+                    source="local",
+                    url="",
+                    score=0,
+                    summary="当前公开数据源未返回足够候选；建议使用更具体领域或 --refresh。",
+                )
+            ]
             directions.append(
                 TopicDirection(
                     name=f"{payload.field} 的近期升温但低竞争切口",
-                    why_now=f"为什么现在热门：最近 {payload.window_days} 天至少出现 {len(payload.candidates)} 条公开信号。",
-                    competition_signal="竞争程度信号：候选较少，说明仍有细分空间，但需要继续补充论文和引用数据。",
+                    why_now=f"为什么现在值得观察：最近 {payload.window_days} 天公开信号数量为 {len(payload.candidates)}，数据不足但可能存在低竞争窗口，需要进一步扩大关键词验证。",
+                    competition_signal="竞争程度信号：候选较少，可能代表资料不足，也可能代表尚未被系统综述覆盖；必须继续补充论文、开源和新闻证据。",
                     research_gap="研究缺口：缺少针对具体机制、失败模式和场景化落地的系统分析。",
                     writing_angles=[f"围绕 {payload.field} 的最新证据做问题地图。"],
-                    representative_items=[_evidence(item) for item in top],
+                    representative_items=representative,
                 )
             )
         return TopicDiscoveryResult(field=payload.field, directions=directions[:8])
@@ -177,6 +282,23 @@ def _group_candidates(candidates: list[HotspotCandidate]) -> list[tuple[str, lis
     return sorted(buckets.items(), key=lambda kv: (len(kv[1]), sum(item.score for item in kv[1])), reverse=True)
 
 
+def _ensure_direction_count(primary: TopicDiscoveryResult, fallback: TopicDiscoveryResult) -> TopicDiscoveryResult:
+    if len(primary.directions) >= 5:
+        primary.directions = primary.directions[:8]
+        return primary
+    seen = {item.name.strip().lower() for item in primary.directions}
+    for item in fallback.directions:
+        key = item.name.strip().lower()
+        if key in seen:
+            continue
+        primary.directions.append(item)
+        seen.add(key)
+        if len(primary.directions) >= 5:
+            break
+    primary.directions = primary.directions[:8]
+    return primary
+
+
 def _keyword(item: HotspotCandidate) -> str:
     text = f"{item.title} {item.evidence}".lower()
     tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9-]{3,}|[\u4e00-\u9fff]{2,}", text)
@@ -189,10 +311,29 @@ def _keyword(item: HotspotCandidate) -> str:
 
 def _direction_name(field: str, keyword: str, items: list[HotspotCandidate]) -> str:
     if items and "arxiv" in items[0].sources:
-        return f"{keyword}：{field} 的新论文驱动型低竞争切口"
+        return f"{_short_title(items[0].title)}：{field} 的新论文驱动型低竞争切口"
     if items and "github" in items[0].sources:
-        return f"{keyword}：开发者生态正在升温的实证选题"
+        return f"{_short_title(items[0].title)}：开发者生态正在升温的实证选题"
     return f"{keyword}：{field} 的近期升温细分方向"
+
+
+def _short_title(value: str, limit: int = 42) -> str:
+    text = re.sub(r"\s+", " ", value).strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _extract_json(content: str) -> str:
+    text = content.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    if text.startswith("{") and text.endswith("}"):
+        return text
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        return text[start : end + 1]
+    raise ValueError("No JSON object found in model response")
 
 
 def _evidence(item: HotspotCandidate) -> EvidenceItem:

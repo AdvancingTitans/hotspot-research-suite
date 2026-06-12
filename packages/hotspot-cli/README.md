@@ -64,6 +64,7 @@ hotspot-research config model setup
 hotspot-research config model setup --provider deepseek --model deepseek/deepseek-chat
 hotspot-research config model setup --provider openai --model gpt-4o-mini
 hotspot-research config model setup --provider anthropic --model claude-3-5-sonnet-latest
+hotspot-research config model setup --provider ark --model openai/doubao-1-5-lite-32k-250115
 hotspot-research config model setup --provider ollama --model ollama/qwen2.5:14b
 hotspot-research config model setup \
   --provider openai-compatible \
@@ -72,6 +73,31 @@ hotspot-research config model setup \
 ```
 
 没有模型 API Key 也能运行，CLI 会使用本地规则分析器生成可用简报；配置模型后，细分方向、研究缺口和标题建议会更稳定。
+
+### 模型配置避坑
+
+配置命令会在保存前做真实连通性验证。对 DeepSeek、OpenAI、Anthropic、OpenRouter、SiliconFlow、Moonshot、Qwen、Ark、Ollama 等内置 provider，通常只需要选择 provider 并输入 API Key；`base_url` 和默认模型由 preset 提供。只有 `custom/openai-compatible` 这类自定义接口必须同时提供真实 `--base-url` 和 `--model`。
+
+火山方舟 Ark 用户请选择 `ark` 预设：
+
+```bash
+hotspot-research config model setup --provider ark
+hotspot-research config model verify
+hotspot-research config model models --provider ark
+hotspot-research config model doctor
+```
+
+Ark 的 OpenAI-Compatible Base URL 应为 `https://ark.cn-beijing.volces.com/api/v3`。如果误填 `https://ark.cn-beijing.volces.com/api/coding`，CLI 会自动修正为 `/api/v3`；如果模型名仍是 `openai/your-model-name`，CLI 会替换为已验证可用的默认 Doubao 模型。
+
+缓存相关命令：
+
+```bash
+hotspot-research config cache show
+hotspot-research config cache set --ttl-hours 6
+hotspot-research config cache clear
+```
+
+缓存只用于减少重复抓取。SQLite 缓存只读或损坏时不会中断主流程，可用 `config cache clear` 清理后重试。
 
 ## 默认交互流程
 

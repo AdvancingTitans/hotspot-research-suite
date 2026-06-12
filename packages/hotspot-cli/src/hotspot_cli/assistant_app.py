@@ -94,10 +94,14 @@ class TopicAssistantApp:
             return input(prompt + "\n> ").strip()
 
     def _collect_candidates(self, field: str, *, refresh: bool) -> list[HotspotCandidate]:
-        query = _normalize_field_query(field)
+        queries = _normalize_field_queries(field)
+        query_label = " / ".join(queries[:3]) + (" ..." if len(queries) > 3 else "")
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
-            task = progress.add_task(f"正在查询最近 30 天公开信号：{query}", total=None)
-            candidates = self.provider.search(query, window_days=30, limit=36, refresh=refresh)
+            task = progress.add_task(f"正在查询最近 30 天公开信号：{query_label}", total=None)
+            if len(queries) == 1:
+                candidates = self.provider.search(queries[0], window_days=30, limit=36, refresh=refresh)
+            else:
+                candidates = self.provider.search_many(queries, window_days=30, limit=36, refresh=refresh)
             progress.update(task, description="正在整理可验证证据")
         return candidates
 
@@ -139,15 +143,47 @@ class TopicAssistantApp:
         return candidates
 
 
-def _normalize_field_query(field: str) -> str:
+def _normalize_field_queries(field: str) -> list[str]:
     text = field.strip()
     if text in {"随便推荐", "AI 通用", "ai 通用", "只看 cs.AI", "近期高价值 AI 选题", "AI 研究与产业趋势"}:
-        return "AI agents multimodal reasoning arxiv"
+        return [
+            "LLM agents benchmark arxiv",
+            "multimodal reasoning benchmark arxiv",
+            "AI coding agents GitHub",
+            "AI agent evaluation",
+            "open source AI agents",
+        ]
     if text == "近期 AI 论文、基准评测、研究缺口":
-        return "AI benchmark evaluation arxiv LLM agents multimodal reasoning"
+        return [
+            "LLM benchmark evaluation arxiv",
+            "AI agent benchmark arxiv",
+            "multimodal reasoning arxiv",
+            "LLM safety evaluation arxiv",
+        ]
     if text == "AI 产品、开源项目、产业落地":
-        return "AI agents open source product launch GitHub"
-    return text
+        return [
+            "AI agents open source GitHub",
+            "AI coding agent GitHub",
+            "browser agent GitHub",
+            "AI product launch agent",
+        ]
+    expanded = [text]
+    lowered = text.lower()
+    expansions = {
+        "大模型智能体": ["LLM agents benchmark arxiv", "AI agent evaluation", "open source AI agents", "browser agent GitHub"],
+        "智能体": ["LLM agents benchmark arxiv", "AI agent evaluation", "agent memory arxiv", "open source AI agents"],
+        "多模态": ["multimodal reasoning benchmark arxiv", "multimodal LLM evaluation arxiv", "vision language model benchmark"],
+        "中文大模型安全": ["Chinese LLM safety evaluation arxiv", "LLM safety benchmark Chinese", "jailbreak defense LLM arxiv"],
+        "大模型安全": ["LLM safety evaluation arxiv", "AI safety benchmark", "jailbreak defense LLM arxiv"],
+        "具身智能": ["embodied AI agents arxiv", "robotics foundation model arxiv", "vision language action model"],
+        "ai 编程": ["AI coding agent GitHub", "code agent benchmark arxiv", "software engineering agent benchmark"],
+        "代码智能体": ["AI coding agent GitHub", "code agent benchmark arxiv", "software engineering agent benchmark"],
+        "评测": ["LLM benchmark evaluation arxiv", "AI agent benchmark arxiv", "LLM evaluation benchmark"],
+    }
+    for keyword, queries in expansions.items():
+        if keyword in text or keyword in lowered:
+            expanded.extend(queries)
+    return _unique(expanded)[:5]
 
 
 def _evidence_for_direction(direction: TopicDirection, candidates: list[HotspotCandidate]) -> list[HotspotCandidate]:
@@ -157,3 +193,14 @@ def _evidence_for_direction(direction: TopicDirection, candidates: list[HotspotC
         return matched[:8]
     names = [item.title for item in direction.representative_items]
     return [item for item in candidates if item.title in names][:8]
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        key = value.lower()
+        if key not in seen:
+            seen.add(key)
+            result.append(value)
+    return result

@@ -14,12 +14,14 @@ from rich.markdown import Markdown
 from .assistant_app import TopicAssistantApp
 from .assistant_analyzer import InstructorTopicAnalyzer
 from .assistant_models import TopicSelection
-from .assistant_settings import save_llm_env
+from .assistant_settings import save_llm_env, set_user_env_value
 from .assistant_sources import Last30DaysProvider
+from .assistant_store import AssistantStore
 from .assistant_writer import BriefWriter
 from .config import ConfigError, ConfigManager, DEFAULT_TEMPLATE
 from .distribution import ChannelRegistry, DistributionError, lark_cli_status
 from .hotspots import HotspotError
+from .model_config import fetch_model_ids, prepare_model_config, verify_model_config
 from .model_presets import MODEL_PRESETS, preset_choices
 
 
@@ -27,9 +29,11 @@ app = typer.Typer(help="交互式选题智能助手", rich_markup_mode="rich")
 config_app = typer.Typer(help="配置管理")
 lark_app = typer.Typer(help="飞书配置")
 llm_app = typer.Typer(help="模型配置")
+cache_app = typer.Typer(help="缓存配置")
 config_app.add_typer(lark_app, name="lark")
 config_app.add_typer(llm_app, name="llm")
 config_app.add_typer(llm_app, name="model")
+config_app.add_typer(cache_app, name="cache")
 app.add_typer(config_app, name="config")
 console = Console()
 
@@ -98,6 +102,7 @@ def _setup_model_interactive(
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     ollama_base_url: str = "http://localhost:11434",
+    verify: bool = True,
 ) -> Path:
     provider = provider or _select_model_preset()
     preset = MODEL_PRESETS.get(provider)
@@ -107,22 +112,40 @@ def _setup_model_interactive(
     base_url = base_url if base_url is not None else preset.base_url
     if provider in {"custom", "openai-compatible"} and not base_url:
         base_url = typer.prompt("请输入 OpenAI-Compatible Base URL，例如 https://api.example.com/v1").strip()
+    if provider in {"custom", "openai-compatible"} and model in {"", "openai/your-model-name", "your-model-name"}:
+        model = typer.prompt("请输入真实模型名，例如 openai/gpt-4o-mini 或 openai/your-deployment-id").strip()
     if provider != "ollama" and api_key is None:
         key_label = preset.api_key_name or "API Key"
         try:
             import questionary  # type: ignore
 
-            api_key = questionary.password(f"请输入 {key_label}（不会显示）").ask()
+            api_key = questionary.password(f"请输入 {key_label}（不会显示；留空则尝试读取已有环境变量）").ask()
         except Exception:
-            api_key = typer.prompt(f"请输入 {key_label}", hide_input=True)
-    if provider == "ollama":
-        ollama_base_url = base_url or ollama_base_url
+            api_key = typer.prompt(f"请输入 {key_label}（留空则尝试读取已有环境变量）", hide_input=True, default="", show_default=False)
+    try:
+        plan = prepare_model_config(
+            provider=provider,
+            model=model,
+            api_key=api_key or None,
+            base_url=base_url,
+            ollama_base_url=ollama_base_url,
+        )
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    for warning in plan.warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
+    if verify:
+        with console.status("正在验证模型配置..."):
+            check = verify_model_config(plan)
+        if not check.ok:
+            raise ConfigError(f"{check.message} {check.detail}".strip())
+        console.print(f"[green]{check.message}[/green]")
     path = save_llm_env(
-        provider="openai-compatible" if provider == "custom" else provider,
-        model=model,
-        api_key=api_key or "",
-        base_url=base_url or "",
-        ollama_base_url=ollama_base_url,
+        provider=plan.provider,
+        model=plan.model,
+        api_key=plan.api_key,
+        base_url=plan.base_url,
+        ollama_base_url=plan.ollama_base_url,
     )
     return path
 
@@ -217,7 +240,7 @@ def doctor(
     command_path = shutil.which("hotspot-research")
     module_hint = "python3 -m hotspot_cli run --output-dir ./briefs"
     console.print("[bold]Hotspot Research CLI 检查[/bold]")
-    if command_path:
+    if command_path and not fix_entrypoint:
         console.print(f"[green]命令入口可用：{command_path}[/green]")
     elif fix_entrypoint and os.name != "nt":
         try:
@@ -225,7 +248,7 @@ def doctor(
         except OSError as exc:
             console.print(f"[red]创建命令入口失败：{exc}[/red]")
         else:
-            console.print(f"[green]已创建命令入口：{shim}[/green]")
+            console.print(f"[green]已刷新命令入口：{shim}[/green]")
             console.print("如果当前 shell 仍提示 command not found，请将 ~/.local/bin 加入 PATH 后重新打开终端。")
     else:
         console.print("[yellow]当前 PATH 找不到 hotspot-research。[/yellow]")
@@ -399,19 +422,160 @@ def model_show() -> None:
 
 @llm_app.command("setup")
 def llm_setup(
-    provider: Optional[str] = typer.Option(None, "--provider", help="deepseek / openai / anthropic / openrouter / siliconflow / moonshot / qwen / ollama / custom"),
+    provider: Optional[str] = typer.Option(None, "--provider", help="deepseek / openai / anthropic / openrouter / siliconflow / moonshot / qwen / ark / ollama / custom"),
     model: Optional[str] = typer.Option(None, "--model", help="模型名；留空使用该服务商推荐默认值"),
     api_key: Optional[str] = typer.Option(None, "--api-key", help="API Key；ollama 可留空"),
     base_url: Optional[str] = typer.Option(None, "--base-url", help="OpenAI-Compatible Base URL"),
     ollama_base_url: str = typer.Option("http://localhost:11434", "--ollama-base-url", help="Ollama 地址"),
+    verify: bool = typer.Option(True, "--verify/--no-verify", help="保存前做真实模型连通性验证"),
 ) -> None:
     """配置结构化模型分析。"""
     try:
-        path = _setup_model_interactive(provider=provider, model=model, api_key=api_key, base_url=base_url, ollama_base_url=ollama_base_url)
+        path = _setup_model_interactive(provider=provider, model=model, api_key=api_key, base_url=base_url, ollama_base_url=ollama_base_url, verify=verify)
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
     console.print(f"[green]模型配置已保存：{path}[/green]")
+
+
+@llm_app.command("verify")
+def model_verify() -> None:
+    """验证当前模型配置是否能列模型并完成一次最小对话。"""
+    from .assistant_settings import AssistantSettings
+
+    settings = AssistantSettings()
+    try:
+        plan = prepare_model_config(
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+            api_key=settings.llm_api_key,
+            base_url=settings.llm_base_url,
+            ollama_base_url=settings.ollama_base_url,
+        )
+    except ValueError as exc:
+        console.print(f"[red]模型配置无效：{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    for warning in plan.warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
+    with console.status("正在验证模型配置..."):
+        result = verify_model_config(plan)
+    if not result.ok:
+        console.print(f"[red]{result.message}[/red]")
+        if result.detail:
+            console.print(f"[yellow]{result.detail}[/yellow]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]{result.message}[/green]")
+    if result.detail:
+        console.print(f"[dim]{result.detail}[/dim]")
+
+
+@llm_app.command("models")
+def model_models(
+    provider: Optional[str] = typer.Option(None, "--provider", help="要查询的 provider；默认使用当前配置"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", help="API Key；留空复用当前配置或环境变量"),
+    base_url: Optional[str] = typer.Option(None, "--base-url", help="OpenAI-Compatible Base URL；preset 可留空"),
+    limit: int = typer.Option(30, "--limit", help="最多展示模型数"),
+) -> None:
+    """从 provider 拉取可用模型列表，避免填错模型名。"""
+    from .assistant_settings import AssistantSettings
+
+    settings = AssistantSettings()
+    provider = provider or settings.llm_provider
+    preset = MODEL_PRESETS.get(provider)
+    if preset is None:
+        console.print(f"[red]未知 provider：{provider}[/red]")
+        raise typer.Exit(code=1)
+    try:
+        plan = prepare_model_config(
+            provider=provider,
+            model=preset.model,
+            api_key=api_key or (settings.llm_api_key if provider == settings.llm_provider else None),
+            base_url=base_url if base_url is not None else (settings.llm_base_url if provider == settings.llm_provider else preset.base_url),
+            ollama_base_url=settings.ollama_base_url,
+        )
+        ids = fetch_model_ids(plan, limit=limit)
+    except Exception as exc:
+        console.print(f"[red]获取模型列表失败：{str(exc)[:500]}[/red]")
+        raise typer.Exit(code=1) from exc
+    if not ids:
+        console.print("[yellow]未获取到模型列表。该 provider 可能不支持 /models，可直接用官方控制台中的模型名。[/yellow]")
+        return
+    for item in ids:
+        console.print(item)
+
+
+@llm_app.command("doctor")
+def model_doctor() -> None:
+    """诊断模型配置常见问题，并给出可直接执行的修复命令。"""
+    from .assistant_settings import AssistantSettings
+
+    settings = AssistantSettings()
+    console.print("[bold]模型配置诊断[/bold]")
+    console.print_json(
+        data={
+            "provider": settings.llm_provider,
+            "model": settings.llm_model,
+            "base_url": settings.llm_base_url,
+            "has_key": settings.has_llm_key(),
+            "cache_ttl_seconds": settings.cache_ttl_seconds,
+        }
+    )
+    if settings.llm_provider == "ark":
+        if settings.llm_base_url and "/api/coding" in settings.llm_base_url:
+            console.print("[red]Ark base_url 使用了 /api/coding，这是错误入口。[/red]")
+            console.print("修复：hotspot-research config model setup --provider ark")
+        if settings.llm_model in {"", "openai/your-model-name", "your-model-name"}:
+            console.print("[red]当前模型名是占位值。[/red]")
+            console.print("修复：hotspot-research config model setup --provider ark --model openai/doubao-1-5-lite-32k-250115")
+    model_verify()
+
+
+@cache_app.command("show")
+def cache_show() -> None:
+    """查看缓存文件和缓存超时时间。"""
+    from .assistant_settings import AssistantSettings
+
+    settings = AssistantSettings()
+    store = AssistantStore()
+    console.print_json(
+        data={
+            "cache_path": str(store.path),
+            "cache_available": store.available,
+            "cache_ttl_seconds": settings.cache_ttl_seconds,
+            "cache_ttl_hours": round(settings.cache_ttl_seconds / 3600, 2),
+        }
+    )
+
+
+@cache_app.command("set")
+def cache_set(
+    ttl_seconds: Optional[int] = typer.Option(None, "--ttl-seconds", help="缓存有效期，秒"),
+    ttl_hours: Optional[float] = typer.Option(None, "--ttl-hours", help="缓存有效期，小时"),
+) -> None:
+    """设置 last30days-safe 查询缓存超时时间。"""
+    if ttl_seconds is None:
+        if ttl_hours is None:
+            ttl_hours = typer.prompt("缓存有效期（小时）", default=6.0)
+        ttl_seconds = int(float(ttl_hours) * 3600)
+    if ttl_seconds < 0:
+        console.print("[red]缓存 TTL 不能为负数。[/red]")
+        raise typer.Exit(code=1)
+    path = set_user_env_value("HOTSPOT_CACHE_TTL_SECONDS", str(ttl_seconds))
+    console.print(f"[green]缓存 TTL 已保存：{ttl_seconds} 秒（{round(ttl_seconds / 3600, 2)} 小时）[/green]")
+    console.print(f"[dim]{path}[/dim]")
+
+
+@cache_app.command("clear")
+def cache_clear() -> None:
+    """清理本地查询缓存；用于缓存损坏、权限异常或希望强制重抓时。"""
+    store = AssistantStore()
+    try:
+        if store.path.exists():
+            store.path.unlink()
+        console.print(f"[green]缓存已清理：{store.path}[/green]")
+    except OSError as exc:
+        console.print(f"[red]缓存清理失败：{exc}[/red]")
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("send")

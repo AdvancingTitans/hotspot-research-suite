@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.3] - 2026-06-12
+
+- Add `hotspot-research config model verify` to validate the current provider/base URL/model/API key with a real minimal chat completion before users start research.
+- Add `hotspot-research config model models` to fetch provider model IDs from `/models`, helping users avoid placeholder or retired model names.
+- Add `hotspot-research config model doctor` with Ark-specific diagnostics and direct fix commands.
+- Make Ark setup one-step: `--provider ark` supplies the verified `/api/v3` base URL and a working Doubao model; known-bad `/api/coding` URLs are auto-repaired.
+- Reject incomplete custom OpenAI-Compatible configs unless both `--base-url` and a real `--model` are supplied.
+- Add `hotspot-research config cache show/set/clear` for cache TTL inspection, tuning, and recovery from read-only or damaged SQLite cache files.
+- Use direct JSON-mode LiteLLM calls plus Pydantic validation for OpenAI-compatible providers to avoid Instructor schema incompatibilities.
+
+## [0.2.2] - 2026-06-12
+
+- Make the no-idea startup path use multiple broad AI topic seeds instead of one narrow query.
+- Add automatic fallback from `last30days-safe` to public GitHub/Hacker News/arXiv/Reddit signal collection when the safe collector returns no items.
+- Return an actionable "data insufficient, broaden verification" direction instead of ending the flow with no options.
+- Suppress the non-fatal urllib3 LibreSSL warning that appears on macOS Command Line Tools Python 3.9.
+- Add a first-class Volcengine Ark preset with the verified `/api/v3` OpenAI-Compatible base URL and a working Doubao chat model.
+- Force LiteLLM to use its local model-cost map so restricted networks do not print irrelevant fetch warnings during interactive use.
+- Fix package `__version__` to match the published CLI line.
+
 ## [0.2.1] - 2026-06-12
 
 - Add a first-run `hotspot-research setup` wizard for model and Lark/Feishu configuration.

@@ -27,6 +27,7 @@ class AssistantSettings(BaseSettings):
     siliconflow_api_key: Optional[str] = None
     moonshot_api_key: Optional[str] = None
     qwen_api_key: Optional[str] = None
+    ark_api_key: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
     cache_ttl_seconds: int = 6 * 3600
     output_dir: Path = Path("briefs")
@@ -48,6 +49,8 @@ class AssistantSettings(BaseSettings):
             return bool(self.moonshot_api_key or os.environ.get("MOONSHOT_API_KEY"))
         if self.llm_provider == "qwen":
             return bool(self.qwen_api_key or os.environ.get("DASHSCOPE_API_KEY"))
+        if self.llm_provider == "ark":
+            return bool(self.ark_api_key or self.llm_api_key or os.environ.get("ARK_API_KEY") or os.environ.get("OPENAI_API_KEY"))
         if self.llm_provider in {"openai-compatible", "custom"}:
             return bool(self.llm_api_key or os.environ.get("OPENAI_API_KEY"))
         if self.llm_provider == "ollama":
@@ -71,6 +74,8 @@ class AssistantSettings(BaseSettings):
             os.environ["MOONSHOT_API_KEY"] = self.moonshot_api_key
         if self.qwen_api_key and not os.environ.get("DASHSCOPE_API_KEY"):
             os.environ["DASHSCOPE_API_KEY"] = self.qwen_api_key
+        if self.ark_api_key and not os.environ.get("ARK_API_KEY"):
+            os.environ["ARK_API_KEY"] = self.ark_api_key
         if self.ollama_base_url and not os.environ.get("OLLAMA_API_BASE"):
             os.environ["OLLAMA_API_BASE"] = self.ollama_base_url
 
@@ -125,11 +130,31 @@ def save_llm_env(
     if provider == "qwen" and api_key:
         lines.append(f"HOTSPOT_QWEN_API_KEY={api_key}")
         lines.append(f"DASHSCOPE_API_KEY={api_key}")
+    if provider == "ark" and api_key:
+        lines.append(f"HOTSPOT_ARK_API_KEY={api_key}")
+        lines.append(f"ARK_API_KEY={api_key}")
+        lines.append(f"OPENAI_API_KEY={api_key}")
+    if provider == "ark" and base_url:
+        lines.append(f"OPENAI_BASE_URL={base_url}")
     if provider in {"openai-compatible", "custom"} and api_key:
         lines.append(f"OPENAI_API_KEY={api_key}")
     if provider in {"openai-compatible", "custom"} and base_url:
         lines.append(f"OPENAI_BASE_URL={base_url}")
     USER_ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return USER_ENV_PATH
+
+
+def set_user_env_value(key: str, value: str) -> Path:
+    USER_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values: dict[str, str] = {}
+    if USER_ENV_PATH.exists():
+        for line in USER_ENV_PATH.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.strip().startswith("#"):
+                name, current = line.split("=", 1)
+                values[name.strip()] = current.strip()
+    values[key] = value
+    USER_ENV_PATH.write_text("\n".join(f"{name}={current}" for name, current in values.items()) + "\n", encoding="utf-8")
+    os.environ[key] = value
     return USER_ENV_PATH
 
 
@@ -142,6 +167,7 @@ def _provider_api_key(settings: AssistantSettings) -> Optional[str]:
         "siliconflow": settings.siliconflow_api_key or os.environ.get("SILICONFLOW_API_KEY"),
         "moonshot": settings.moonshot_api_key or os.environ.get("MOONSHOT_API_KEY"),
         "qwen": settings.qwen_api_key or os.environ.get("DASHSCOPE_API_KEY"),
+        "ark": settings.ark_api_key or settings.llm_api_key or os.environ.get("ARK_API_KEY") or os.environ.get("OPENAI_API_KEY"),
         "openai-compatible": os.environ.get("OPENAI_API_KEY"),
         "custom": os.environ.get("OPENAI_API_KEY"),
     }
