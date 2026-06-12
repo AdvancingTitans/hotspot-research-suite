@@ -23,6 +23,20 @@ def lark_cli_status() -> tuple[bool, str]:
     return True, proc.stdout.strip() or "lark-cli 已安装。"
 
 
+def lark_auth_status() -> tuple[bool, str]:
+    ok, message = lark_cli_status()
+    if not ok:
+        return False, message
+    proc = subprocess.run(["lark-cli", "auth", "status"], capture_output=True, text=True)
+    output = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode != 0:
+        return False, output.strip() or "lark-cli auth status 执行失败。"
+    lowered = output.lower()
+    if "not logged" in lowered or "未登录" in output or "no valid" in lowered:
+        return False, output.strip() or "尚未完成飞书用户授权。"
+    return True, output.strip() or "飞书授权状态正常。"
+
+
 Runner = Callable[[list[str], Optional[Path]], str]
 
 

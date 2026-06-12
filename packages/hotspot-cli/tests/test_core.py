@@ -1,9 +1,10 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from hotspot_cli.config import ConfigManager
-from hotspot_cli.distribution import LarkChannel
+from hotspot_cli.distribution import LarkChannel, lark_auth_status
 from hotspot_cli.hotspots import HotspotCandidate, HotspotFilter, HotspotService
 
 
@@ -81,6 +82,17 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(calls[1][:3], ["lark-cli", "im", "+messages-send"])
             self.assertIn("--file", calls[1])
             self.assertIn("brief.md", calls[1])
+
+    def test_lark_auth_status_detects_missing_login(self) -> None:
+        proc = Mock(returncode=1, stdout="", stderr="Not logged in. Run lark-cli auth login")
+        with patch("hotspot_cli.distribution.shutil.which", return_value="/usr/local/bin/lark-cli"), patch(
+            "hotspot_cli.distribution.subprocess.run",
+            side_effect=[Mock(returncode=0, stdout="lark-cli version 1.0", stderr=""), proc],
+        ):
+            ok, message = lark_auth_status()
+
+        self.assertFalse(ok)
+        self.assertIn("Not logged in", message)
 
 
 if __name__ == "__main__":

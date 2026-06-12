@@ -38,6 +38,13 @@ hotspot-research setup
 hotspot-research run --output-dir ./briefs
 ```
 
+启动后会显示一个简洁的状态面板：当前模型、缓存 TTL、工作目录、输出目录，以及常用命令提示。交互中可输入：
+
+- `1-8`：选择一个方向并生成 Markdown 简报。
+- `refresh`：换一批和当前会话已展示主题不同的候选方向。
+- 自然语言追问：例如 `更细分一点`、`加上中国场景`、`和 browser agent 对比`。CLI 会重新规划检索 query、重新抓取公开证据，再生成新的方向表。
+- `q`：退出。
+
 已有想法时，直接验证并生成简报：
 
 ```bash
@@ -104,14 +111,15 @@ hotspot-research config cache clear
 ### 流程一：没思路时发现新兴高价值选题
 
 1. CLI 用普通语言询问你如何开始：手动输入领域、让工具推荐近期高价值 AI 选题、偏学术论文方向、偏产业产品/开源方向。
-2. `last30days-safe` 拉取最近 7-30 天公开信号，来源包括 Hacker News、GitHub、Reddit、Polymarket，以及包内保留的 arXiv/GitHub/HN 二次信号能力。
-3. LLM 或本地规则分析器提炼 5-8 个具体细分方向，而不是泛泛的“多模态大模型”。
-4. Rich 表格展示：
+2. 当前配置的大模型会先规划检索 query；手动输入围绕用户关注点检索，默认推荐检索综合 AI 热点，学术/产业模式分别偏向论文评测或产品开源信号。
+3. `last30days-safe` 拉取最近 7-30 天公开信号，来源包括 Hacker News、GitHub、Reddit、Polymarket，以及包内保留的 arXiv/GitHub/HN 二次信号能力。
+4. LLM 或本地规则分析器提炼 5-8 个具体细分方向，而不是泛泛的“多模态大模型”。
+5. Rich 表格展示：
    - 吸引人的选题名称
    - 为什么现在热门的一句话与数据证据
    - 竞争程度信号
    - 2-3 篇近期代表性热点标题、来源和链接
-5. 你可以输入序号选择，也可以自然语言继续追问，例如 `详细说说第 3 个`、`找更细分的子方向`、`加上中国场景`、`和 XXX 对比一下`。
+6. 你可以输入序号选择，也可以输入 `refresh` 换一批，或自然语言继续追问，例如 `详细说说第 3 个`、`找更细分的子方向`、`加上中国场景`、`和 XXX 对比一下`。
 
 ### 流程二：深入分析并生成《选题情报简报》
 
@@ -297,6 +305,13 @@ hotspot-research config lark setup --chat-id oc_xxxxxxxxx --identity bot
 ```bash
 hotspot-research send ./briefs/example.md --topic "选题情报简报" --summary "详见附件"
 ```
+
+交互式生成 Markdown 简报后，CLI 会主动询问是否发送到飞书群：
+
+- 未安装 `lark-cli`：提示安装和配置命令。
+- 已安装但未授权：提示运行 `hotspot-research config lark auth --init`。
+- 已授权但未配置群聊：提示把机器人加入目标群，并输入 `chat_id` 保存。
+- 已授权且已配置群聊：直接发送简报文件和选题简介。
 
 如果缺失 `lark-cli`，请先按飞书官方说明安装并配置：<https://github.com/larksuite/cli>。
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.4] - 2026-06-13
+
+- Replace the slogan-style startup panel with a Claude Code-inspired status dashboard showing model, cache TTL, cwd, output directory, quick commands, and recent activity hints.
+- Add LLM-driven search planning for default, academic, industry, manual, refresh, and follow-up paths so each mode retrieves distinct evidence-backed topics.
+- Make `refresh` avoid topics already shown in the current session.
+- Expand the refresh query pool and suppress zero-evidence placeholder topics from recommendation tables.
+- Re-query public evidence for natural-language follow-up prompts instead of filtering the previous table only.
+- After saving a Markdown brief, ask whether to send it to a Lark/Feishu group and guide the user through lark-cli install/auth/chat_id setup when anything is missing.
+- Add `lark_auth_status` diagnostics and tests for missing authorization.
+
 ## [0.2.3] - 2026-06-12
 
 - Add `hotspot-research config model verify` to validate the current provider/base URL/model/API key with a real minimal chat completion before users start research.

@@ -201,6 +201,18 @@ class AssistantTests(unittest.TestCase):
         self.assertIn("LLM agents benchmark arxiv", queries)
         self.assertGreater(len(queries), 1)
 
+    def test_seen_candidate_filter_uses_title_tokens(self) -> None:
+        from hotspot_cli.assistant_app import _exclude_seen
+
+        items = [
+            HotspotCandidate("InterleaveThinker: Reinforcing Agentic Interleaved Generation", "AI", 18, ["arxiv"], "", ["u1"]),
+            HotspotCandidate("Fresh Benchmark for Agent Memory", "AI", 18, ["arxiv"], "", ["u2"]),
+        ]
+
+        fresh = _exclude_seen(items, ["InterleaveThinker 强化智能体交错生成"])
+
+        self.assertEqual([item.title for item in fresh], ["Fresh Benchmark for Agent Memory"])
+
     def test_provider_falls_back_to_public_signal_client_when_safe_source_is_empty(self) -> None:
         from hotspot_cli.assistant_sources import Last30DaysProvider
         from hotspot_cli.assistant_store import AssistantStore
@@ -234,7 +246,7 @@ class AssistantTests(unittest.TestCase):
             self.assertEqual(len(items), 1)
             self.assertEqual(items[0].sources, ["arxiv"])
 
-    def test_fallback_analyzer_returns_actionable_direction_when_candidates_empty(self) -> None:
+    def test_fallback_analyzer_does_not_create_placeholder_when_candidates_empty(self) -> None:
         from hotspot_cli.assistant_analyzer import FallbackTopicAnalyzer
         from hotspot_cli.assistant_models import TopicDiscoveryInput
 
@@ -242,9 +254,7 @@ class AssistantTests(unittest.TestCase):
             TopicDiscoveryInput(field="近期高价值 AI 选题", window_days=30, candidates=[])
         )
 
-        self.assertEqual(len(result.directions), 1)
-        self.assertIn("数据不足", result.directions[0].why_now)
-        self.assertTrue(result.directions[0].representative_items)
+        self.assertEqual(result.directions, [])
 
     def test_direction_count_is_topped_up_from_fallback(self) -> None:
         from hotspot_cli.assistant_analyzer import _ensure_direction_count
@@ -265,6 +275,30 @@ class AssistantTests(unittest.TestCase):
         merged = _ensure_direction_count(primary, fallback)
 
         self.assertEqual([item.name for item in merged.directions], ["A", "B", "C", "D", "E"])
+
+    def test_query_planner_uses_different_modes_and_followup_text(self) -> None:
+        from hotspot_cli.assistant_analyzer import plan_search_queries
+
+        class DummySettings:
+            def has_llm_key(self) -> bool:
+                return False
+
+        settings = DummySettings()
+        academic = plan_search_queries(settings=settings, user_input="近期 AI 论文、基准评测、研究缺口", mode="academic", avoid=[])  # type: ignore[arg-type]
+        industry = plan_search_queries(settings=settings, user_input="AI 产品、开源项目、产业落地", mode="industry", avoid=[])  # type: ignore[arg-type]
+        followup = plan_search_queries(settings=settings, user_input="大模型智能体 中国场景", mode="followup", avoid=[])  # type: ignore[arg-type]
+
+        self.assertNotEqual(academic, industry)
+        self.assertTrue(any("大模型智能体" in item for item in followup))
+
+    def test_refresh_query_variants_expand_original_queries(self) -> None:
+        from hotspot_cli.assistant_app import _refresh_query_variants
+
+        queries = _refresh_query_variants(["LLM agents benchmark arxiv"], 2)
+
+        self.assertGreater(len(queries), 1)
+        self.assertTrue(any("LLM agents benchmark arxiv" in item for item in queries))
+        self.assertTrue(any(item != "LLM agents benchmark arxiv" for item in queries))
 
     def test_trend_metrics_use_pydantic_field_names(self) -> None:
         from hotspot_cli.assistant_sources import Last30DaysProvider

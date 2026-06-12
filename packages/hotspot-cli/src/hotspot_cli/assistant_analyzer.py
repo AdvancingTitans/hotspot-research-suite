@@ -31,6 +31,52 @@ class TopicAnalyzer:
         raise NotImplementedError
 
 
+def plan_search_queries(
+    *,
+    settings: AssistantSettings,
+    user_input: str,
+    mode: str,
+    avoid: list[str],
+    limit: int = 5,
+) -> list[str]:
+    fallback = _fallback_queries(user_input, mode, avoid, limit)
+    if not settings.has_llm_key():
+        return fallback
+    try:
+        settings.apply_provider_env()
+        from litellm import completion  # type: ignore
+
+        prompt = {
+            "task": "为研究选题助手生成公开网页/论文/开源项目检索 query。query 必须能在 GitHub、arXiv、Hacker News、Reddit 或新闻搜索中找到可验证证据。",
+            "mode": mode,
+            "user_input": user_input,
+            "avoid_topics": avoid,
+            "rules": [
+                "输出 4-6 个具体英文 query，必要时保留中文关键词。",
+                "如果 mode 是 academic，优先 arxiv、benchmark、evaluation、survey gap。",
+                "如果 mode 是 industry，优先 product launch、open source、GitHub、market adoption。",
+                "如果用户自由输入，围绕用户关注点生成细分 query，不要退回泛泛 AI。",
+                "避开 avoid_topics 中已经出现过的主题和近似表达。",
+            ],
+            "output_schema": {"queries": ["string"]},
+        }
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            response = completion(
+                model=settings.llm_model,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": "你是严谨的研究检索规划器。只输出合法 JSON，不要 Markdown。"},
+                    {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+                ],
+                **settings.litellm_kwargs(),
+            )
+        data = json.loads(_extract_json(response.choices[0].message.content or "{}"))
+        queries = [str(item).strip() for item in data.get("queries", []) if str(item).strip()]
+        return _dedupe_texts(queries + fallback)[:limit]
+    except Exception:
+        return fallback
+
+
 class InstructorTopicAnalyzer(TopicAnalyzer):
     def __init__(self, settings: Optional[AssistantSettings] = None, fallback: Optional[TopicAnalyzer] = None) -> None:
         self.settings = settings or AssistantSettings()
@@ -198,27 +244,6 @@ class FallbackTopicAnalyzer(TopicAnalyzer):
                     representative_items=representative,
                 )
             )
-        if not directions:
-            top = payload.candidates[:3]
-            representative = [_evidence(item) for item in top] if top else [
-                EvidenceItem(
-                    title=f"{payload.field} 的近期公开信号不足，需要扩大关键词",
-                    source="local",
-                    url="",
-                    score=0,
-                    summary="当前公开数据源未返回足够候选；建议使用更具体领域或 --refresh。",
-                )
-            ]
-            directions.append(
-                TopicDirection(
-                    name=f"{payload.field} 的近期升温但低竞争切口",
-                    why_now=f"为什么现在值得观察：最近 {payload.window_days} 天公开信号数量为 {len(payload.candidates)}，数据不足但可能存在低竞争窗口，需要进一步扩大关键词验证。",
-                    competition_signal="竞争程度信号：候选较少，可能代表资料不足，也可能代表尚未被系统综述覆盖；必须继续补充论文、开源和新闻证据。",
-                    research_gap="研究缺口：缺少针对具体机制、失败模式和场景化落地的系统分析。",
-                    writing_angles=[f"围绕 {payload.field} 的最新证据做问题地图。"],
-                    representative_items=representative,
-                )
-            )
         return TopicDiscoveryResult(field=payload.field, directions=directions[:8])
 
     def create_brief(self, selection: TopicSelection, trend: Optional[TrendMetrics] = None) -> TopicBrief:
@@ -280,6 +305,70 @@ def _group_candidates(candidates: list[HotspotCandidate]) -> list[tuple[str, lis
         keyword = _keyword(item)
         buckets[keyword].append(item)
     return sorted(buckets.items(), key=lambda kv: (len(kv[1]), sum(item.score for item in kv[1])), reverse=True)
+
+
+def _fallback_queries(user_input: str, mode: str, avoid: list[str], limit: int) -> list[str]:
+    text = user_input.strip() or "AI research opportunities"
+    lowered = text.lower()
+    if mode == "academic":
+        seeds = [
+            "LLM benchmark evaluation arxiv",
+            "AI agent benchmark arxiv",
+            "multimodal reasoning benchmark arxiv",
+            "LLM safety evaluation arxiv",
+            "retrieval augmented reasoning arxiv",
+        ]
+    elif mode == "industry":
+        seeds = [
+            "AI coding agent GitHub",
+            "browser agent GitHub",
+            "AI agent product launch",
+            "open source AI agents GitHub",
+            "enterprise AI agent adoption",
+        ]
+    elif mode == "followup":
+        seeds = [
+            f"{text} arxiv benchmark",
+            f"{text} GitHub open source",
+            f"{text} recent research gap",
+            f"{text} China application",
+            f"{text} evaluation comparison",
+        ]
+    elif mode == "manual" or text not in {"近期高价值 AI 选题", "AI 研究与产业趋势"}:
+        seeds = [
+            f"{text} arxiv benchmark",
+            f"{text} GitHub open source",
+            f"{text} recent paper",
+            f"{text} evaluation",
+            f"{text} research gap",
+        ]
+    else:
+        seeds = [
+            "LLM agents benchmark arxiv",
+            "multimodal reasoning benchmark arxiv",
+            "AI coding agents GitHub",
+            "LLM safety evaluation arxiv",
+            "robotics foundation model arxiv",
+        ]
+    if "多模态" in text or "multimodal" in lowered:
+        seeds.insert(0, "multimodal reasoning benchmark arxiv")
+    if "智能体" in text or "agent" in lowered:
+        seeds.insert(0, "LLM agent evaluation benchmark arxiv")
+    if "安全" in text or "safety" in lowered:
+        seeds.insert(0, "LLM safety jailbreak evaluation arxiv")
+    avoid_text = " ".join(avoid).lower()
+    return [item for item in _dedupe_texts(seeds) if item.lower() not in avoid_text][:limit]
+
+
+def _dedupe_texts(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        key = re.sub(r"\s+", " ", value.strip().lower())
+        if key and key not in seen:
+            seen.add(key)
+            result.append(value.strip())
+    return result
 
 
 def _ensure_direction_count(primary: TopicDiscoveryResult, fallback: TopicDiscoveryResult) -> TopicDiscoveryResult:
