@@ -11,7 +11,6 @@ import typer
 from rich.console import Console
 from rich.markdown import Markdown
 
-from .assistant_app import TopicAssistantApp
 from .assistant_analyzer import InstructorTopicAnalyzer
 from .assistant_models import TopicSelection
 from .assistant_settings import save_llm_env, set_user_env_value
@@ -19,6 +18,7 @@ from .assistant_sources import Last30DaysProvider
 from .assistant_store import AssistantStore
 from .assistant_writer import BriefWriter
 from .config import ConfigError, ConfigManager, DEFAULT_TEMPLATE
+from .conversation_app import AdaptiveTopicAssistantApp
 from .distribution import ChannelRegistry, DistributionError, lark_cli_status
 from .hotspots import HotspotError
 from .model_config import fetch_model_ids, prepare_model_config, verify_model_config
@@ -172,7 +172,7 @@ def run(
     """启动交互式选题智能助手，发现新兴高价值选题并生成情报简报。"""
     _ensure_entrypoint_hint()
     try:
-        TopicAssistantApp(console=console).run(output_dir, refresh=refresh)
+        AdaptiveTopicAssistantApp(console=console).run(output_dir, refresh=refresh)
     except (HotspotError, ConfigError) as exc:
         console.print(f"[red]执行失败：{exc}[/red]")
         raise typer.Exit(code=1) from exc

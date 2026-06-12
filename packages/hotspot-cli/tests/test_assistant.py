@@ -364,6 +364,82 @@ class AssistantTests(unittest.TestCase):
             ]:
                 self.assertIn(section, text)
 
+    def test_research_profile_summary_and_missing_fields(self) -> None:
+        from hotspot_cli.conversation_models import ResearchProfile
+
+        profile = ResearchProfile(
+            broad_interest="AI+人文社科",
+            selected_focus="LLM 辅助社会科学可复现性评估",
+            goal="写深度文章",
+        )
+
+        self.assertIn("AI+人文社科", profile.summary())
+        self.assertIn("background", profile.missing_fields())
+        self.assertNotIn("goal", profile.missing_fields())
+
+    def test_personalized_brief_markdown_contains_user_fit_sections(self) -> None:
+        from hotspot_cli.assistant_models import ResearchQuestion, TrendMetrics
+        from hotspot_cli.conversation_models import PersonalizedTopicBrief
+
+        brief = PersonalizedTopicBrief(
+            topic="LLM 社科可复现性评估",
+            field="AI+人文社科",
+            profile_summary="- 目标：深度文章",
+            why_best_fit="这个选题结合用户的人文社科背景与近期数据窗口。",
+            angles=[
+                ResearchQuestion(
+                    angle="方法复现",
+                    question="LLM 能否稳定复现经典社科实验？",
+                    value="能形成差异化切入。",
+                    feasibility="可从近期论文和公开数据集入手。",
+                )
+            ],
+            title_suggestions=["《LLM 社科可复现性评估》"],
+            outline=["背景", "证据", "缺口"],
+            readings=[],
+            risks=["资料不足时需要扩大检索。"],
+            trend=TrendMetrics(trend="上升", heat_7d=3, heat_30d=10, heat_30_60d=2, explanation="测试"),
+        )
+
+        text = brief.to_markdown()
+
+        self.assertIn("为什么这个选题最契合你", text)
+        self.assertIn("写作/研究大纲", text)
+
+    def test_conversation_fallback_initial_directions_support_cross_domain_input(self) -> None:
+        from hotspot_cli.conversation_app import _fallback_initial_directions
+
+        directions = _fallback_initial_directions("我想做AI+人文社科交叉")
+
+        self.assertGreaterEqual(len(directions), 3)
+        self.assertTrue(any("社会" in item.name or "社科" in item.name for item in directions))
+
+    def test_conversation_fallback_match_topics_scores_personal_fit(self) -> None:
+        from hotspot_cli.assistant_models import EvidenceItem, TopicDirection
+        from hotspot_cli.conversation_app import _fallback_match_topics
+        from hotspot_cli.conversation_models import ResearchProfile
+
+        profile = ResearchProfile(
+            broad_interest="AI+人文社科",
+            selected_focus="LLM 社会科学",
+            background="社会科学研究训练",
+            goal="写深度文章",
+            output_preference="深度长文",
+        )
+        direction = TopicDirection(
+            name="LLM 社会科学可复现性评估",
+            why_now="最近 30 天出现 3 条论文信号。",
+            competition_signal="方向具体，竞争适中。",
+            research_gap="缺少中文语境下的复现案例。",
+            writing_angles=["中文案例", "方法比较"],
+            representative_items=[EvidenceItem(title="LLM reproducibility", source="arxiv", url="https://arxiv.org/abs/test", score=18)],
+        )
+
+        topics = _fallback_match_topics(profile, [direction], [])
+
+        self.assertEqual(topics[0].name, direction.name)
+        self.assertGreaterEqual(topics[0].total_score, 50)
+
 
 if __name__ == "__main__":
     unittest.main()

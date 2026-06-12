@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.5] - 2026-06-13
+
+- Replace the default `run` flow with a 4-stage adaptive topic interview: interest exploration, user profile building, data-backed opportunity scan, and personalized matching/brief generation.
+- Add conversation state and Pydantic models for `ResearchProfile`, `ConversationState`, `IntentResult`, `MatchedTopic`, and `PersonalizedTopicBrief`.
+- Add LLM-assisted natural-language intent recognition and adaptive one-question-at-a-time profile follow-up, with local fallback rules when no model key is configured.
+- Match candidate topics by personal fit, data opportunity, and feasibility instead of ranking by heat alone.
+- Generate a personalized Markdown topic brief explaining why the selected topic fits the user, with angles, titles, outline, readings, risks, and trend data.
+- Make non-TTY input fall back to plain `input()` so automated smoke tests and piped demos do not break on questionary prompts.
+
 ## [0.2.4] - 2026-06-13
 
 - Replace the slogan-style startup panel with a Claude Code-inspired status dashboard showing model, cache TTL, cwd, output directory, quick commands, and recent activity hints.

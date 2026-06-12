@@ -38,11 +38,13 @@ hotspot-research setup
 hotspot-research run --output-dir ./briefs
 ```
 
-启动后会显示一个简洁的状态面板：当前模型、缓存 TTL、工作目录、输出目录，以及常用命令提示。交互中可输入：
+启动后会显示一个简洁的状态面板：当前模型、缓存 TTL、输出目录，以及常用命令提示。随后进入 4 阶段自适应对话。交互中可输入：
 
-- `1-8`：选择一个方向并生成 Markdown 简报。
-- `refresh`：换一批和当前会话已展示主题不同的候选方向。
-- 自然语言追问：例如 `更细分一点`、`加上中国场景`、`和 browser agent 对比`。CLI 会重新规划检索 query、重新抓取公开证据，再生成新的方向表。
+- `随便推荐`、`完全没思路`、`AI+人文社科交叉`：从开放兴趣探索开始。
+- `换一个方向`、`这个太难了，换简单点的`：重新聚焦并刷新机会扫描。
+- `再问我几个问题`：继续补充画像。
+- `都看看但帮我排序`：按个人契合度、数据机会、可行性综合排序。
+- `1-6`：选择一个方向并生成个性化 Markdown 简报。
 - `q`：退出。
 
 已有想法时，直接验证并生成简报：
@@ -108,39 +110,73 @@ hotspot-research config cache clear
 
 ## 默认交互流程
 
-### 流程一：没思路时发现新兴高价值选题
+`hotspot-research run` 现在默认是“先理解你，再扫描机会”的自适应流程，而不是单纯按热度列榜。
 
-1. CLI 用普通语言询问你如何开始：手动输入领域、让工具推荐近期高价值 AI 选题、偏学术论文方向、偏产业产品/开源方向。
-2. 当前配置的大模型会先规划检索 query；手动输入围绕用户关注点检索，默认推荐检索综合 AI 热点，学术/产业模式分别偏向论文评测或产品开源信号。
-3. `last30days-safe` 拉取最近 7-30 天公开信号，来源包括 Hacker News、GitHub、Reddit、Polymarket，以及包内保留的 arXiv/GitHub/HN 二次信号能力。
-4. LLM 或本地规则分析器提炼 5-8 个具体细分方向，而不是泛泛的“多模态大模型”。
-5. Rich 表格展示：
-   - 吸引人的选题名称
-   - 为什么现在热门的一句话与数据证据
-   - 竞争程度信号
-   - 2-3 篇近期代表性热点标题、来源和链接
-6. 你可以输入序号选择，也可以输入 `refresh` 换一批，或自然语言继续追问，例如 `详细说说第 3 个`、`找更细分的子方向`、`加上中国场景`、`和 XXX 对比一下`。
+### 阶段 1：兴趣与领域探索
 
-### 流程二：深入分析并生成《选题情报简报》
+CLI 先用开放式问题了解你的 broad 兴趣或问题。你可以输入：
 
-选中方向后，CLI 会继续查询不同时间窗口并生成简报：
+- `随便推荐`
+- `我完全没思路`
+- `我想做 AI+人文社科交叉`
+- 一个具体领域，例如 `大模型智能体`、`中文大模型安全`、`AI 写作工具`
+
+系统会先给出 3-5 个初步方向，并询问你更倾向哪个，或是否想继续聚焦某个子领域。
+
+### 阶段 2：构建用户深度画像
+
+这是最关键的一步。CLI 会根据前文回答自适应追问 4-8 轮，每次只问一个最需要补充的问题，覆盖但不机械穷举以下维度：
+
+- 学术/写作背景与已有积累
+- 核心目标：发论文、写深度文章、职业发展、知识体系构建等
+- 时间与资源约束
+- 独特个人优势：跨学科背景、语言文化视角、数据来源、人脉、实践场景等
+- 风险偏好：高风险高回报或稳健路径
+- 输出形式偏好：学术论文、深度长文、研究报告、系列文章等
+- 其他约束或偏好
+
+画像构建结束后，CLI 会用 Rich 面板总结“你的选题画像”，并允许你确认或补充修正。
+
+### 阶段 3：数据驱动的机会扫描 + 初步匹配
+
+确认画像后，CLI 会结合个人画像规划检索 query，通过 `last30days-safe` 与包内公开信号能力扫描 arXiv、GitHub、Hacker News、Reddit 等公开渠道，寻找同时满足以下条件的候选方向：
+
+- 有明显时效性或上升趋势，并有数据支撑
+- 存在可切入的研究缺口
+- 与你的背景、目标、资源和风险偏好高度匹配
+
+Rich 表格会展示 4-6 个候选选题，并给出：
+
+- 个人契合度
+- 数据机会与时效性
+- 写作/研究可行性
+- 初步匹配理由：个人契合点 + 数据信号 + 研究缺口
+
+### 阶段 4：个性化深度匹配、排序与细化
+
+你可以继续自然语言互动：
+
+- `都看看但帮我排序`
+- `这个方向怎么结合我的中文语境优势`
+- `找更细的切入点`
+- `这个太难了，换简单点的`
+- `换一个方向`
+
+CLI 会继续刷新画像约束、重新检索或重新排序。最终选择某个方向后，会计算不同时间窗口并生成《个性化选题情报简报》：
 
 - 最近 7 天热度
 - 最近 30 天热度
 - 30-60 天前对照信号
 - 趋势判断：上升、平稳、下降或数据不足
-- 最新相关文章列表
-- 结构化中文简报
 
 简报包含：
 
-1. 为什么这个选题现在具有时效性
-2. 当前研究现状
-3. 高潜力研究缺口 / 切入角度
-4. 每个角度的具体写作/研究问题、价值和可行性
-5. 4-6 个高质量标题建议
-6. 值得重点阅读的近期文章及理由
-7. 潜在风险提示
+1. 为什么这个选题最契合你：个人优势 + 数据窗口结合
+2. 推荐的 2-4 个具体切入角度及理由
+3. 高质量标题建议：学术风格 + 深度文章风格
+4. 写作/研究大纲框架建议
+5. 必读核心文献与材料，以及为什么重要
+6. 潜在风险与应对
 
 完整简报会保存为带时间戳的 `.md` 文件，并在终端用 Rich Markdown 渲染。
 
@@ -158,8 +194,10 @@ CLI 会把你的想法转换为公开信号查询，输出热度趋势、研究�
 hotspot-cli/
 ├── src/hotspot_cli/
 │   ├── cli.py                 # Typer 入口；run/brief/doctor/config/send
-│   ├── assistant_app.py       # Rich + questionary 交互式选题助手
-│   ├── assistant_models.py    # Pydantic v2 结构化模型
+│   ├── conversation_app.py    # 4 阶段自适应选题对话主流程
+│   ├── conversation_models.py # 用户画像、意图、匹配选题、个性化简报模型
+│   ├── assistant_app.py       # 旧线性选题流程，保留作内部兼容
+│   ├── assistant_models.py    # 证据、趋势、通用简报 Pydantic 模型
 │   ├── assistant_sources.py   # last30days-safe 数据提供器与趋势计算
 │   ├── assistant_analyzer.py  # Instructor/LLM 分析器与本地 fallback
 │   ├── assistant_store.py     # SQLite 缓存与历史记录
@@ -177,7 +215,61 @@ hotspot-cli/
 
 ## 核心 Pydantic 数据模型
 
-`assistant_models.py` 中的模型保证 LLM 输出和 Markdown 简报结构稳定：
+`conversation_models.py` 和 `assistant_models.py` 共同保证 LLM 输出、用户画像和 Markdown 简报结构稳定。主流程新增模型：
+
+```python
+class ResearchProfile(BaseModel):
+    broad_interest: str
+    selected_focus: str
+    background: str
+    goal: str
+    time_budget: str
+    resources: str
+    unique_advantages: str
+    risk_preference: str
+    output_preference: str
+    constraints: str
+    confidence: float
+
+class ConversationState(BaseModel):
+    phase: Literal["interest", "profile", "scan", "match", "brief"]
+    turns: list[DialogueTurn]
+    profile: ResearchProfile
+    initial_directions: list[InitialDirection]
+    matched_topics: list[MatchedTopic]
+    seen_topics: list[str]
+    profile_rounds: int
+
+class IntentResult(BaseModel):
+    intent: Literal["answer", "refresh", "narrow", "broaden", "easier", "harder", "rank", "choose", "quit", "unknown"]
+    target_index: int | None
+    rewritten_focus: str
+    note: str
+
+class MatchedTopic(BaseModel):
+    name: str
+    personal_fit: int
+    opportunity_score: int
+    feasibility_score: int
+    total_score: int
+    personal_reason: str
+    data_signal: str
+    research_gap: str
+    representative_items: list[EvidenceItem]
+
+class PersonalizedTopicBrief(BaseModel):
+    topic: str
+    profile_summary: str
+    why_best_fit: str
+    angles: list[ResearchQuestion]
+    title_suggestions: list[str]
+    outline: list[str]
+    readings: list[ReadingItem]
+    risks: list[str]
+    trend: TrendMetrics
+```
+
+通用证据与趋势模型：
 
 ```python
 class EvidenceItem(BaseModel):
