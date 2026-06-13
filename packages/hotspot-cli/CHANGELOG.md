@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7] - 2026-06-13
+
+- Add machine-readable `hotspot-research doctor --json` diagnostics for command path, model config, Lark CLI, and cache state.
+- Expand `hotspot-research config show` and `config cache show` with model and cache metadata while continuing to mask credentials.
+- Add cache status/source metadata with automatic SQLite migration so failed/empty/fresh cache states are easier to inspect.
+- Keep existing cache payloads readable while making new cache entries distinguish `ok` and `empty-valid` states.
+
 ## [0.2.6] - 2026-06-13
 
 - Persist the user's topic profile locally in SQLite so repeated `hotspot-research run` sessions can reuse it without asking the same questions again.

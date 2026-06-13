@@ -26,7 +26,15 @@ class Last30DaysProvider:
         if cached is not None:
             return [_candidate_from_dict(item) for item in cached.get("items", [])]
         candidates = self._collect_query(query, window_days=window_days, limit=limit)
-        self.store.set_cache(query, window_days, {"items": [_candidate_to_dict(item) for item in candidates], "fetched_at": time.time()})
+        status = "ok" if candidates else "empty-valid"
+        source = _source_label(candidates)
+        self.store.set_cache(
+            query,
+            window_days,
+            {"items": [_candidate_to_dict(item) for item in candidates], "fetched_at": time.time(), "source": source},
+            status=status,
+            source=source,
+        )
         return candidates
 
     def search_many(self, queries: list[str], *, window_days: int = 30, limit: int = 36, refresh: bool = False) -> list[HotspotCandidate]:
@@ -117,6 +125,11 @@ def _candidate_from_dict(data: dict) -> HotspotCandidate:
 
 def _heat(items: list[HotspotCandidate]) -> int:
     return int(sum(max(1.0, min(item.score, 1000.0) / 20.0) for item in items))
+
+
+def _source_label(items: list[HotspotCandidate]) -> str:
+    sources = sorted({source for item in items for source in item.sources if source})
+    return ",".join(sources[:4])
 
 
 def _dedupe(items: list[HotspotCandidate]) -> list[HotspotCandidate]:

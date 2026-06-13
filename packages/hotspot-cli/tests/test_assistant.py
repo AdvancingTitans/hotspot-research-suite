@@ -46,10 +46,25 @@ class AssistantTests(unittest.TestCase):
             payload = {"items": [{"title": "A"}]}
 
             self.assertIsNone(store.get_cache("agent", 30, max_age_seconds=3600))
-            store.set_cache("agent", 30, payload)
+            store.set_cache("agent", 30, payload, status="ok", source="github")
 
             self.assertEqual(store.get_cache("agent", 30, max_age_seconds=3600), payload)
             self.assertIsNone(store.get_cache("agent", 7, max_age_seconds=3600))
+            stats = store.cache_stats()
+            self.assertEqual(stats["entries"], 1)
+            self.assertEqual(stats["statuses"]["ok"], 1)
+            self.assertEqual(stats["sources"]["github"], 1)
+
+    def test_sqlite_cache_error_status_is_not_returned_as_valid_hit(self) -> None:
+        from hotspot_cli.assistant_store import AssistantStore
+
+        with tempfile.TemporaryDirectory() as td:
+            store = AssistantStore(Path(td) / "assistant.sqlite")
+            store.set_cache("agent", 30, {"items": []}, status="error", source="github")
+
+            self.assertIsNone(store.get_cache("agent", 30, max_age_seconds=3600))
+            stats = store.cache_stats()
+            self.assertEqual(stats["statuses"]["error"], 1)
 
     def test_sqlite_profile_memory_round_trip_and_clear(self) -> None:
         from hotspot_cli.assistant_store import AssistantStore

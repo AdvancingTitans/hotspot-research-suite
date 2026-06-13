@@ -254,10 +254,35 @@ def setup(
 @app.command("doctor")
 def doctor(
     fix_entrypoint: bool = typer.Option(False, "--fix-entrypoint", help="当前 PATH 找不到命令时，自动创建 ~/.local/bin/hotspot-research shim"),
+    json_output: bool = typer.Option(False, "--json", help="输出机器可读诊断 JSON"),
 ) -> None:
     """检查本机命令入口、Python 环境和飞书 CLI 可用性。"""
     command_path = shutil.which("hotspot-research")
     module_hint = "python3 -m hotspot_cli run --output-dir ./briefs"
+    ok, message = lark_cli_status()
+    from .assistant_settings import AssistantSettings
+
+    settings = AssistantSettings()
+    store = AssistantStore()
+    diagnostics = {
+        "command": {
+            "name": "hotspot-research",
+            "path": command_path or "",
+            "module_fallback": module_hint,
+            "python": sys.executable,
+        },
+        "lark_cli": {"ok": ok, "message": message},
+        "model": {
+            "provider": settings.llm_provider,
+            "model": settings.llm_model,
+            "base_url": settings.llm_base_url or (settings.ollama_base_url if settings.llm_provider == "ollama" else ""),
+            "has_key": settings.has_llm_key(),
+        },
+        "cache": store.cache_stats(),
+    }
+    if json_output:
+        console.print_json(data=diagnostics)
+        return
     console.print("[bold]Hotspot Research CLI 检查[/bold]")
     if command_path and not fix_entrypoint:
         console.print(f"[green]命令入口可用：{command_path}[/green]")
@@ -274,25 +299,40 @@ def doctor(
         console.print(f"可直接使用模块入口：{module_hint}")
         console.print("也可以运行：python3 -m hotspot_cli doctor --fix-entrypoint")
 
-    ok, message = lark_cli_status()
     if ok:
         console.print(f"[green]飞书 CLI：{message}[/green]")
     else:
         console.print(f"[yellow]飞书 CLI：{message}[/yellow]")
         console.print("安装并配置后可用 send 命令把简报文件发送到飞书群。")
-    console.print("模型配置：运行 `hotspot-research config model show` 查看当前模型，或运行 `hotspot-research setup` 重新配置。")
+    console.print(f"模型配置：{settings.llm_provider} / {settings.llm_model}；运行 `hotspot-research config model show` 查看详情。")
+    console.print(f"缓存：{store.cache_stats().get('entries', 0)} 条；运行 `hotspot-research config cache show` 查看详情。")
 
 
 @config_app.command("show")
 def config_show(config_path: Optional[Path] = typer.Option(None, "--config", help="配置文件路径")) -> None:
     """查看当前配置。"""
+    from .assistant_settings import AssistantSettings
+
     manager = ConfigManager(config_path)
     try:
         cfg = manager.load()
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
-    console.print_json(data={"lark": cfg.lark.__dict__, "config_path": str(manager.path)})
+    settings = AssistantSettings()
+    console.print_json(
+        data={
+            "config_path": str(manager.path),
+            "lark": cfg.lark.__dict__,
+            "model": {
+                "provider": settings.llm_provider,
+                "model": settings.llm_model,
+                "base_url": settings.llm_base_url or (settings.ollama_base_url if settings.llm_provider == "ollama" else ""),
+                "has_key": settings.has_llm_key(),
+            },
+            "cache": AssistantStore().cache_stats(),
+        }
+    )
 
 
 @config_app.command("reset")
@@ -556,12 +596,17 @@ def cache_show() -> None:
 
     settings = AssistantSettings()
     store = AssistantStore()
+    stats = store.cache_stats()
     console.print_json(
         data={
             "cache_path": str(store.path),
             "cache_available": store.available,
             "cache_ttl_seconds": settings.cache_ttl_seconds,
             "cache_ttl_hours": round(settings.cache_ttl_seconds / 3600, 2),
+            "entries": stats.get("entries", 0),
+            "statuses": stats.get("statuses", {}),
+            "sources": stats.get("sources", {}),
+            "newest_age_seconds": stats.get("newest_age_seconds"),
         }
     )
 

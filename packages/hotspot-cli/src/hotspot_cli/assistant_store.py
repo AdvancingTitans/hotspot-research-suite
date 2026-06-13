@@ -28,11 +28,15 @@ class AssistantStore:
                     query text not null,
                     window_days integer not null,
                     created_at real not null,
+                    status text not null default 'ok',
+                    source text not null default '',
                     payload text not null,
                     primary key (query, window_days)
                 )
                 """
             )
+            self._ensure_column(conn, "query_cache", "status", "text not null default 'ok'")
+            self._ensure_column(conn, "query_cache", "source", "text not null default ''")
             conn.execute(
                 """
                 create table if not exists history (
@@ -54,21 +58,28 @@ class AssistantStore:
                 """
             )
 
+    def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, declaration: str) -> None:
+        rows = conn.execute(f"pragma table_info({table})").fetchall()
+        if column not in {str(row[1]) for row in rows}:
+            conn.execute(f"alter table {table} add column {column} {declaration}")
+
     def get_cache(self, query: str, window_days: int, *, max_age_seconds: int) -> Optional[dict[str, Any]]:
         if not self.available:
             return None
         try:
             with self._connect() as conn:
                 row = conn.execute(
-                    "select created_at, payload from query_cache where query=? and window_days=?",
+                    "select created_at, status, payload from query_cache where query=? and window_days=?",
                     (query, window_days),
                 ).fetchone()
         except (sqlite3.Error, json.JSONDecodeError):
             return None
         if not row:
             return None
-        created_at, payload = row
+        created_at, status, payload = row
         if time.time() - float(created_at) > max_age_seconds:
+            return None
+        if status == "error":
             return None
         try:
             data = json.loads(str(payload))
@@ -76,22 +87,47 @@ class AssistantStore:
             return None
         return data if isinstance(data, dict) else None
 
-    def set_cache(self, query: str, window_days: int, payload: dict[str, Any]) -> None:
+    def set_cache(self, query: str, window_days: int, payload: dict[str, Any], *, status: str = "ok", source: str = "") -> None:
         if not self.available:
             return
         try:
             with self._connect() as conn:
                 conn.execute(
                     """
-                    insert into query_cache(query, window_days, created_at, payload)
-                    values (?, ?, ?, ?)
+                    insert into query_cache(query, window_days, created_at, status, source, payload)
+                    values (?, ?, ?, ?, ?, ?)
                     on conflict(query, window_days)
-                    do update set created_at=excluded.created_at, payload=excluded.payload
+                    do update set
+                      created_at=excluded.created_at,
+                      status=excluded.status,
+                      source=excluded.source,
+                      payload=excluded.payload
                     """,
-                    (query, window_days, time.time(), json.dumps(payload, ensure_ascii=False)),
+                    (query, window_days, time.time(), status, source, json.dumps(payload, ensure_ascii=False)),
                 )
         except sqlite3.Error:
             self.available = False
+
+    def cache_stats(self) -> dict[str, Any]:
+        if not self.available:
+            return {"available": False, "path": str(self.path), "entries": 0, "statuses": {}, "sources": {}}
+        try:
+            with self._connect() as conn:
+                entries = conn.execute("select count(*) from query_cache").fetchone()[0]
+                statuses = dict(conn.execute("select status, count(*) from query_cache group by status").fetchall())
+                sources = dict(conn.execute("select source, count(*) from query_cache group by source").fetchall())
+                newest = conn.execute("select max(created_at) from query_cache").fetchone()[0]
+        except sqlite3.Error:
+            self.available = False
+            return {"available": False, "path": str(self.path), "entries": 0, "statuses": {}, "sources": {}}
+        return {
+            "available": True,
+            "path": str(self.path),
+            "entries": int(entries or 0),
+            "statuses": {str(key or "unknown"): int(value) for key, value in statuses.items()},
+            "sources": {str(key or "unknown"): int(value) for key, value in sources.items()},
+            "newest_age_seconds": None if newest is None else round(time.time() - float(newest), 2),
+        }
 
     def add_history(self, kind: str, title: str, payload: dict[str, Any]) -> None:
         if not self.available:

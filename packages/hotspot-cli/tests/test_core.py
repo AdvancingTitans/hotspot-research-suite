@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -93,6 +94,21 @@ class CoreTests(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertIn("Not logged in", message)
+
+    def test_doctor_json_is_machine_readable(self) -> None:
+        from typer.testing import CliRunner
+        from hotspot_cli.cli import app
+
+        runner = CliRunner()
+        with patch("hotspot_cli.cli.lark_cli_status", return_value=(False, "missing lark-cli")):
+            result = runner.invoke(app, ["doctor", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        data = json.loads(result.stdout)
+        self.assertIn("command", data)
+        self.assertIn("model", data)
+        self.assertIn("cache", data)
+        self.assertEqual(data["lark_cli"]["ok"], False)
 
 
 if __name__ == "__main__":

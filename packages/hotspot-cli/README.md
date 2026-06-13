@@ -56,6 +56,15 @@ hotspot-research config profile show
 hotspot-research config profile clear
 ```
 
+诊断本机命令入口、模型配置、飞书 CLI 和缓存状态：
+
+```bash
+hotspot-research doctor
+hotspot-research doctor --json
+```
+
+`--json` 输出适合复制到 issue、自动化任务或排障脚本中；不会显示 API Key。
+
 已有想法时，直接验证并生成简报：
 
 ```bash
@@ -115,7 +124,7 @@ hotspot-research config cache set --ttl-hours 6
 hotspot-research config cache clear
 ```
 
-缓存只用于减少重复抓取。SQLite 缓存只读或损坏时不会中断主流程，可用 `config cache clear` 清理后重试。
+缓存只用于减少重复抓取。`config cache show` 会展示缓存路径、TTL、条目数、状态分布和来源分布；SQLite 缓存只读或损坏时不会中断主流程，可用 `config cache clear` 清理后重试。
 
 ## 默认交互流程
 
