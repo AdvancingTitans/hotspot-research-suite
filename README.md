@@ -1,6 +1,29 @@
 # Hotspot Research Suite
 
-Hotspot Research Suite contains a public-source research signal collector and a Python CLI for data-backed topic discovery.
+**AI research agent for trend discovery, public-source analysis, and Lark-ready Chinese briefs.**
+
+Hotspot Research Suite helps researchers and deep writers find timely, evidence-backed, relatively low-competition topics before everyone else writes the same piece.
+
+```bash
+pip install --upgrade hotspot-research-cli
+hotspot-research setup
+hotspot-research brief "中文大模型安全评测的新兴低竞争切口" --field "中文大模型安全"
+```
+
+Use it when you need topic intelligence, must-read source lists, trend metrics, and a structured Markdown brief that can be sent to Feishu/Lark.
+
+## Why Star This Repo
+
+- Turns recent public signals into concrete research and writing directions.
+- Combines a reusable agent skill with a PyPI CLI.
+- Uses Pydantic models and SQLite cache so outputs are structured and repeatable.
+- Built for Chinese long-form research workflows and Lark distribution.
+
+## Related Repos
+
+- [`hotspot-research-skill`](https://github.com/AdvancingTitans/hotspot-research-skill): standalone installable skill for long-form research reports.
+- [`pain-miner`](https://github.com/AdvancingTitans/pain-miner): community pain-point mining for micro-product ideas.
+- [`awesome-ai-agent-research-tools`](https://github.com/AdvancingTitans/awesome-ai-agent-research-tools): the curated entrypoint for all related tools.
 
 The current default product is `hotspot-research-cli`: an interactive topic intelligence assistant for researchers and deep writers. It helps users discover timely, evidence-backed, relatively low-competition writing and research topics, then saves a structured Chinese 《选题情报简报》 as Markdown.
 
